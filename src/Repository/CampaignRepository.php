@@ -12,8 +12,7 @@ final class CampaignRepository
 {
     public function __construct(
         private readonly PDO $pdo
-    ) {
-    }
+    ) {}
 
     public function create(Campaign $campaign): Campaign
     {
@@ -75,6 +74,34 @@ final class CampaignRepository
         }
 
         return $this->hydrate($row);
+    }
+
+    public function updateStatus(
+        int $id,
+        string $status,
+        ?DateTimeImmutable $matchedAt = null,
+    ): Campaign {
+        $statement = $this->pdo->prepare(
+            'UPDATE campaigns
+         SET status = ?, matched_at = ?
+         WHERE id = ?'
+        );
+
+        $statement->execute([
+            $status,
+            $matchedAt?->format(DATE_ATOM),
+            $id,
+        ]);
+
+        $campaign = $this->findById($id);
+
+        if ($campaign === null) {
+            throw new \RuntimeException(
+                sprintf('Campagne introuvable : %d', $id)
+            );
+        }
+
+        return $campaign;
     }
 
     private function hydrate(array $row): Campaign
