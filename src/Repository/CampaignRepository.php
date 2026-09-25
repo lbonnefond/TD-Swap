@@ -1,0 +1,96 @@
+<?php
+
+declare(strict_types=1);
+
+namespace LBonnefond\TdSwap\Repository;
+
+use DateTimeImmutable;
+use LBonnefond\TdSwap\Model\Campaign;
+use PDO;
+
+final class CampaignRepository
+{
+    public function __construct(
+        private readonly PDO $pdo
+    ) {
+    }
+
+    public function create(Campaign $campaign): Campaign
+    {
+        $statement = $this->pdo->prepare(
+            'INSERT INTO campaigns (
+                name,
+                starts_at,
+                closes_at,
+                status,
+                matched_at,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)'
+        );
+
+        $createdAt = $campaign->createdAt
+            ?? new DateTimeImmutable();
+
+        $statement->execute([
+            $campaign->name,
+            $campaign->startsAt->format(DATE_ATOM),
+            $campaign->closesAt->format(DATE_ATOM),
+            $campaign->status,
+            $campaign->matchedAt?->format(DATE_ATOM),
+            $createdAt->format(DATE_ATOM),
+        ]);
+
+        return new Campaign(
+            (int) $this->pdo->lastInsertId(),
+            $campaign->name,
+            $campaign->startsAt,
+            $campaign->closesAt,
+            $campaign->status,
+            $campaign->matchedAt,
+            $createdAt,
+        );
+    }
+
+    public function findById(int $id): ?Campaign
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT
+                id,
+                name,
+                starts_at,
+                closes_at,
+                status,
+                matched_at,
+                created_at
+             FROM campaigns
+             WHERE id = ?'
+        );
+
+        $statement->execute([$id]);
+
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+
+        if ($row === false) {
+            return null;
+        }
+
+        return $this->hydrate($row);
+    }
+
+    private function hydrate(array $row): Campaign
+    {
+        return new Campaign(
+            (int) $row['id'],
+            $row['name'],
+            new DateTimeImmutable($row['starts_at']),
+            new DateTimeImmutable($row['closes_at']),
+            $row['status'],
+            $row['matched_at'] !== null
+                ? new DateTimeImmutable($row['matched_at'])
+                : null,
+            $row['created_at'] !== null
+                ? new DateTimeImmutable($row['created_at'])
+                : null,
+        );
+    }
+}

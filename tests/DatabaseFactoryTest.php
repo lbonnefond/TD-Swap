@@ -40,6 +40,9 @@ final class DatabaseFactoryTest extends TestCase
             ->fetchAll(\PDO::FETCH_COLUMN);
 
         self::assertSame([
+            'campaign_groups',
+            'campaign_profile_groups',
+            'campaign_students',
             'campaigns',
             'groups',
             'profile_groups',
