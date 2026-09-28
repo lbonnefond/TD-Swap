@@ -45,6 +45,7 @@ final class DatabaseFactoryTest extends TestCase
             'campaign_students',
             'campaigns',
             'groups',
+            'matches',
             'profile_groups',
             'profiles',
             'requests',

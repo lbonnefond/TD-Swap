@@ -192,5 +192,36 @@ final class Schema
             CREATE INDEX IF NOT EXISTS idx_requests_student
             ON requests(campaign_student_id)
         SQL);
+
+        $pdo->exec(<<<'SQL'
+    CREATE TABLE IF NOT EXISTS matches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        campaign_id INTEGER NOT NULL,
+        student_id INTEGER NOT NULL,
+        from_group_id INTEGER NOT NULL,
+        to_group_id INTEGER NOT NULL,
+        preference_rank INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+
+        FOREIGN KEY (campaign_id)
+            REFERENCES campaigns(id)
+            ON DELETE CASCADE,
+
+        FOREIGN KEY (student_id)
+            REFERENCES campaign_students(id)
+            ON DELETE CASCADE,
+
+        FOREIGN KEY (from_group_id)
+            REFERENCES campaign_groups(id),
+
+        FOREIGN KEY (to_group_id)
+            REFERENCES campaign_groups(id)
+    )
+SQL);
+
+        $pdo->exec(<<<'SQL'
+    CREATE INDEX IF NOT EXISTS idx_matches_campaign
+    ON matches(campaign_id)
+SQL);
     }
 }
