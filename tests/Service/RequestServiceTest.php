@@ -224,4 +224,29 @@ final class RequestServiceTest extends TestCase
 
         $this->service->withdraw(1, 1, $withdrawn);
     }
+
+    public function testRequestCanBeWithdrawn(): void
+    {
+        $submitted = new DateTimeImmutable('2026-10-02T10:00:00+02:00');
+        $withdrawn = new DateTimeImmutable('2026-10-03T11:00:00+02:00');
+
+        $this->service->submit(
+            1,
+            1,
+            [2],
+            $submitted
+        );
+
+        $request = $this->service->withdrawRequest(
+            1,
+            'S001',
+            $withdrawn
+        );
+
+        self::assertNotNull($request->withdrawnAt);
+        self::assertSame(
+            $withdrawn->format(DATE_ATOM),
+            $request->withdrawnAt->format(DATE_ATOM)
+        );
+    }
 }

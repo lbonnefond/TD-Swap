@@ -12,7 +12,8 @@ final class CampaignRequestRepository
 {
     public function __construct(
         private readonly PDO $pdo
-    ) {}
+    ) {
+    }
 
     public function create(CampaignRequest $request): CampaignRequest
     {
@@ -173,7 +174,36 @@ final class CampaignRequestRepository
         $statement->execute([$campaignId]);
 
         return array_map(
-            fn (array $row): CampaignRequest => $this->hydrate($row),
+            fn(array $row): CampaignRequest => $this->hydrate($row),
+            $statement->fetchAll(PDO::FETCH_ASSOC),
+        );
+    }
+
+    /**
+     * @return list<CampaignRequest>
+     */
+    public function findByCampaign(int $campaignId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT
+            id,
+            campaign_id,
+            campaign_student_id,
+            first_submitted_at,
+            updated_at,
+            withdrawn_at,
+            target_1_campaign_group_id,
+            target_2_campaign_group_id,
+            target_3_campaign_group_id
+         FROM requests
+         WHERE campaign_id = ?
+         ORDER BY first_submitted_at ASC, id ASC'
+        );
+
+        $statement->execute([$campaignId]);
+
+        return array_map(
+            fn(array $row): CampaignRequest => $this->hydrate($row),
             $statement->fetchAll(PDO::FETCH_ASSOC),
         );
     }
@@ -200,8 +230,8 @@ final class CampaignRequestRepository
             new DateTimeImmutable($row['first_submitted_at']),
             new DateTimeImmutable($row['updated_at']),
             $row['withdrawn_at'] !== null
-                ? new DateTimeImmutable($row['withdrawn_at'])
-                : null,
+            ? new DateTimeImmutable($row['withdrawn_at'])
+            : null,
         );
     }
 }

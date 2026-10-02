@@ -18,7 +18,8 @@ final class RequestService
         private readonly PDO $pdo,
         private readonly CampaignRepository $campaignRepository,
         private readonly CampaignRequestRepository $requestRepository,
-    ) {}
+    ) {
+    }
 
     /**
      * @param list<int> $targetCampaignGroupIds
@@ -37,10 +38,12 @@ final class RequestService
             );
         }
 
-        if ($this->requestRepository->findByCampaignAndStudent(
-            $campaignId,
-            $campaignStudentId
-        ) !== null) {
+        if (
+            $this->requestRepository->findByCampaignAndStudent(
+                $campaignId,
+                $campaignStudentId
+            ) !== null
+        ) {
             throw new DomainException(
                 'Cet étudiant possède déjà une demande pour cette campagne.'
             );
@@ -277,5 +280,70 @@ final class RequestService
                 'Au moins un groupe cible n’est pas autorisé pour le profil de l’étudiant.'
             );
         }
+    }
+
+    public function withdrawRequest(
+        int $campaignId,
+        string $studentNumber,
+        DateTimeImmutable $now,
+    ): CampaignRequest {
+        $statement = $this->pdo->prepare(
+            'SELECT id
+         FROM campaign_students
+         WHERE campaign_id = ?
+           AND student_number = ?'
+        );
+
+        $statement->execute([
+            $campaignId,
+            $studentNumber,
+        ]);
+
+        $campaignStudentId = $statement->fetchColumn();
+
+        if ($campaignStudentId === false) {
+            throw new \DomainException(
+                'Étudiant introuvable dans cette campagne.'
+            );
+        }
+
+        $request = $this->requestRepository->findByCampaignAndStudent(
+            $campaignId,
+            (int) $campaignStudentId
+        );
+
+        if ($request === null) {
+            throw new \DomainException(
+                'Aucune demande trouvée pour cet étudiant.'
+            );
+        }
+
+        $withdrawn = new CampaignRequest(
+            $request->id,
+            $request->campaignId,
+            $request->campaignStudentId,
+            $request->targetCampaignGroupIds,
+            $request->firstSubmittedAt,
+            $now,
+            $now,
+        );
+
+        return $this->requestRepository->update($withdrawn);
+    }
+
+    /**
+     * @return list<CampaignRequest>
+     */
+    public function findActiveRequests(int $campaignId): array
+    {
+        return $this->requestRepository->findActiveByCampaign($campaignId);
+    }
+
+    /**
+     * @return list<CampaignRequest>
+     */
+    public function findRequests(int $campaignId): array
+    {
+        return $this->requestRepository->findByCampaign($campaignId);
     }
 }

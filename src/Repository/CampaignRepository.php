@@ -120,4 +120,22 @@ final class CampaignRepository
                 : null,
         );
     }
+
+    public function findAll(): array
+    {
+        $statement = $this->pdo->query(
+            'SELECT
+            id,
+            name,
+            starts_at,
+            closes_at,
+            status,
+            matched_at,
+            created_at
+         FROM campaigns
+         ORDER BY starts_at DESC, id DESC'
+        );
+
+        return $statement->fetchAll();
+    }
 }

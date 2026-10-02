@@ -72,7 +72,7 @@ final class MatchingService
             }
 
             $requests[] = new Request(
-                $campaignRequest->campaignStudentId,
+                $campaignRequest->id,
                 $campaignRequest->campaignStudentId,
                 (int) $row['initial_group_id'],
                 $campaignRequest->targetCampaignGroupIds,
