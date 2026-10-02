@@ -47,8 +47,27 @@ header('Content-Type: application/json; charset=utf-8');
 $method = $_SERVER['REQUEST_METHOD'];
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
+// Fichiers statiques (app.html, css, js…) : on laisse le serveur les servir.
+if ($path !== '/' && is_file(__DIR__ . $path)) {
+    return false;
+}
+
+// Redirect racine vers l'interface
+if ($method === 'GET' && $path === '/') {
+    header('Location: /app.html');
+    http_response_code(302);
+    exit;
+}
+
+// Redirect racine vers l'interface
+if ($method === 'GET' && $path === '/') {
+    header('Location: /app.html');
+    http_response_code(302);
+    exit;
+}
+
 try {
-    if ($method === 'GET' && $path === '/') {
+    if ($method === 'GET' && $path === '/campaigns') {
         echo json_encode(
             [
                 'campaigns' => $campaignRepository->findAll(),
@@ -111,6 +130,122 @@ try {
             ],
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT
         );
+        exit;
+    }
+
+    if (
+        $method === 'POST'
+        && preg_match('#^/campaigns/(\d+)/swap-proposals$#', $path, $matches)
+    ) {
+        $campaignId = (int) $matches[1];
+
+        $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
+
+        $studentNumber = trim((string) ($input['student_number'] ?? ''));
+        $targetNumber = trim((string) ($input['target_student_number'] ?? ''));
+
+        if ($studentNumber === '' || $targetNumber === '') {
+            throw new InvalidArgumentException(
+                'Les deux numéros étudiants sont requis.'
+            );
+        }
+
+        // Vérifier que la campagne est open
+        $campaign = $campaignRepository->findById($campaignId);
+        if ($campaign === null || $campaign->status !== 'open') {
+            throw new \DomainException('La campagne n\'est pas ouverte.');
+        }
+
+        // Résoudre les deux étudiants
+        $stmt = $pdo->prepare(
+            'SELECT id, initial_group_id, profile_id
+             FROM campaign_students
+             WHERE campaign_id = ? AND student_number = ?'
+        );
+        $stmt->execute([$campaignId, $studentNumber]);
+        $student = $stmt->fetch();
+
+        $stmt->execute([$campaignId, $targetNumber]);
+        $target = $stmt->fetch();
+
+        if ($student === false) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Étudiant introuvable.']);
+            exit;
+        }
+        if ($target === false) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Étudiant cible introuvable dans cette campagne.']);
+            exit;
+        }
+
+        // Même groupe ?
+        if ($student['initial_group_id'] === $target['initial_group_id']) {
+            throw new \DomainException(
+                'Les deux étudiants sont déjà dans le même groupe.'
+            );
+        }
+
+        // Vérifier l'éligibilité réciproque
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM campaign_profile_groups
+             WHERE campaign_id = ? AND profile_id = ? AND campaign_group_id = ?'
+        );
+        $stmt->execute([$campaignId, $student['profile_id'], $target['initial_group_id']]);
+        if ($stmt->fetchColumn() === false) {
+            throw new \DomainException(
+                'Le groupe de l\'étudiant cible n\'est pas éligible pour ton profil.'
+            );
+        }
+        $stmt->execute([$campaignId, $target['profile_id'], $student['initial_group_id']]);
+        if ($stmt->fetchColumn() === false) {
+            throw new \DomainException(
+                'Ton groupe n\'est pas éligible pour le profil de l\'étudiant cible.'
+            );
+        }
+
+        // Pas de demande classique existante pour ce student
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM requests
+             WHERE campaign_id = ? AND campaign_student_id = ? AND withdrawn_at IS NULL'
+        );
+        $stmt->execute([$campaignId, $student['id']]);
+        if ($stmt->fetchColumn() !== false) {
+            throw new \DomainException(
+                'Tu as déjà une demande de changement. Retire-la avant de proposer un échange.'
+            );
+        }
+
+        // Retirer l'ancienne proposition si elle existe (update)
+        $stmt = $pdo->prepare(
+            'DELETE FROM swap_proposals WHERE campaign_id = ? AND student_id = ?'
+        );
+        $stmt->execute([$campaignId, $student['id']]);
+
+        // Insérer la nouvelle
+        $stmt = $pdo->prepare(
+            'INSERT INTO swap_proposals (campaign_id, student_id, target_student_id, created_at)
+             VALUES (?, ?, ?, ?)'
+        );
+        $stmt->execute([$campaignId, $student['id'], $target['id'], (new DateTimeImmutable())->format('Y-m-d H:i:s')]);
+
+        // Vérifier si l'échange est maintenant confirmé
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM swap_proposals
+             WHERE campaign_id = ? AND student_id = ? AND target_student_id = ?'
+        );
+        $stmt->execute([$campaignId, $target['id'], $student['id']]);
+        $confirmed = $stmt->fetchColumn() !== false;
+
+        echo json_encode([
+            'proposed' => true,
+            'target_student_number' => $targetNumber,
+            'confirmed' => $confirmed,
+            'message' => $confirmed
+                ? 'Les deux étudiants ont proposé l\'échange. Il est confirmé.'
+                : 'Proposition envoyée. En attente de confirmation de l\'autre étudiant.',
+        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT);
+
         exit;
     }
 
@@ -441,6 +576,33 @@ try {
     }
 
     if (
+        $method === 'DELETE'
+        && preg_match('#^/campaigns/(\d+)/swap-proposals$#', $path, $matches)
+    ) {
+        $campaignId = (int) $matches[1];
+
+        $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
+        $studentNumber = trim((string) ($input['student_number'] ?? ''));
+
+        $stmt = $pdo->prepare(
+            'DELETE FROM swap_proposals
+             WHERE campaign_id = ? AND student_number = ?'
+        );
+        // Actually, swap_proposals doesn't have student_number, it has student_id
+        $stmt = $pdo->prepare(
+            'DELETE FROM swap_proposals
+             WHERE campaign_id = ? AND student_id = (
+                 SELECT id FROM campaign_students
+                 WHERE campaign_id = ? AND student_number = ?
+             )'
+        );
+        $stmt->execute([$campaignId, $campaignId, $studentNumber]);
+
+        echo json_encode(['removed' => true]);
+        exit;
+    }
+
+    if (
         $_SERVER['REQUEST_METHOD'] === 'GET'
         && preg_match('#^/campaigns/(\d+)/requests$#', $path, $matches)
     ) {
@@ -548,6 +710,143 @@ try {
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT
         );
 
+        exit;
+    }
+
+    if (
+        $method === 'GET'
+        && preg_match('#^/campaigns/(\d+)/requests/joined$#', $path, $matches)
+    ) {
+        $campaignId = (int) $matches[1];
+
+        $statement = $pdo->prepare(
+            'SELECT r.id, r.first_submitted_at, r.updated_at, r.withdrawn_at,
+                    cs.student_number, cs.surname, cs.first_name,
+                    cg1.name AS target_1,
+                    cg2.name AS target_2,
+                    cg3.name AS target_3
+             FROM requests r
+             JOIN campaign_students cs
+               ON cs.id = r.campaign_student_id
+              AND cs.campaign_id = r.campaign_id
+             LEFT JOIN campaign_groups cg1
+               ON cg1.id = r.target_1_campaign_group_id
+              AND cg1.campaign_id = r.campaign_id
+             LEFT JOIN campaign_groups cg2
+               ON cg2.id = r.target_2_campaign_group_id
+              AND cg2.campaign_id = r.campaign_id
+             LEFT JOIN campaign_groups cg3
+               ON cg3.id = r.target_3_campaign_group_id
+              AND cg3.campaign_id = r.campaign_id
+             WHERE r.campaign_id = ?
+               AND r.withdrawn_at IS NULL
+             ORDER BY r.first_submitted_at, r.id'
+        );
+        $statement->execute([$campaignId]);
+
+        $rows = $statement->fetchAll();
+
+        echo json_encode(
+            [
+                'requests' => array_map(
+                    static function (array $row): array {
+                        $targets = array_values(
+                            array_filter(
+                                [
+                                    $row['target_1'],
+                                    $row['target_2'],
+                                    $row['target_3'],
+                                ],
+                                static fn($v) => $v !== null
+                            )
+                        );
+
+                        return [
+                            'id' => $row['id'],
+                            'student_number' => $row['student_number'],
+                            'surname' => $row['surname'],
+                            'first_name' => $row['first_name'],
+                            'targets' => $targets,
+                            'first_submitted_at' => $row['first_submitted_at'],
+                        ];
+                    },
+                    $rows
+                ),
+            ],
+            JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT
+        );
+
+        exit;
+    }
+
+    if (
+        $method === 'GET'
+        && preg_match('#^/campaigns/(\d+)/matches$#', $path, $matches)
+    ) {
+        $campaignId = (int) $matches[1];
+
+        $statement = $pdo->prepare(
+            'SELECT m.student_id, m.from_group_id, m.to_group_id, m.preference_rank,
+                    cs.student_number, cs.surname, cs.first_name,
+                    cgf.name AS from_group,
+                    cgt.name AS to_group
+             FROM matches m
+             JOIN campaign_students cs
+               ON cs.id = m.student_id
+              AND cs.campaign_id = m.campaign_id
+             JOIN campaign_groups cgf
+               ON cgf.id = m.from_group_id
+              AND cgf.campaign_id = m.campaign_id
+             JOIN campaign_groups cgt
+               ON cgt.id = m.to_group_id
+              AND cgt.campaign_id = m.campaign_id
+             WHERE m.campaign_id = ?
+             ORDER BY cs.student_number'
+        );
+        $statement->execute([$campaignId]);
+
+        echo json_encode(
+            ['matches' => $statement->fetchAll()],
+            JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT
+        );
+
+        exit;
+    }
+
+    if (
+        $method === 'GET'
+        && preg_match('#^/campaigns/(\d+)/confirmed-swaps$#', $path, $matches)
+    ) {
+        $campaignId = (int) $matches[1];
+
+        $stmt = $pdo->prepare(
+            'SELECT
+                sa.student_number AS student_a_number,
+                sa.surname AS student_a_surname,
+                sa.first_name AS student_a_first_name,
+                ga.name AS student_a_group,
+                sb.student_number AS student_b_number,
+                sb.surname AS student_b_surname,
+                sb.first_name AS student_b_first_name,
+                gb.name AS student_b_group
+             FROM swap_proposals sp_a
+             JOIN campaign_students sa ON sa.id = sp_a.student_id AND sa.campaign_id = sp_a.campaign_id
+             JOIN campaign_students sb ON sb.id = sp_a.target_student_id AND sb.campaign_id = sp_a.campaign_id
+             JOIN campaign_groups ga ON ga.id = sa.initial_group_id AND ga.campaign_id = sp_a.campaign_id
+             JOIN campaign_groups gb ON gb.id = sb.initial_group_id AND gb.campaign_id = sp_a.campaign_id
+             JOIN swap_proposals sp_b
+               ON sp_b.campaign_id = sp_a.campaign_id
+              AND sp_b.student_id = sp_a.target_student_id
+              AND sp_b.target_student_id = sp_a.student_id
+             WHERE sp_a.campaign_id = ?
+             ORDER BY sa.student_number'
+        );
+        $stmt->execute([$campaignId]);
+
+        echo json_encode(
+            ['swaps' => $stmt->fetchAll()],
+            JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT
+        );
         exit;
     }
 

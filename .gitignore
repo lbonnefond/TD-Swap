@@ -1,6 +1,8 @@
 /vendor/
 /storage/*.db
 /storage/*.sqlite
+/storage/
+/data/~$*.xlsx
 .env
 .DS_Store
 

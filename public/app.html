@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TD-Swap</title>
+    <style>
+        :root {
+            --bg: #f5f6fa;
+            --card: #fff;
+            --border: #e0e0e0;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --danger: #dc2626;
+            --success: #16a34a;
+            --text: #1f2937;
+            --text-light: #6b7280;
+            --radius: 8px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .subtitle {
+            color: var(--text-light);
+            margin-bottom: 1.5rem;
+            font-size: 0.9rem;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 1.5rem;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .tab {
+            padding: 0.5rem 1.25rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            font-weight: 500;
+            user-select: none;
+        }
+
+        .tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+            font-size: 0.9rem;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        select {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 0.95rem;
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 0.9rem;
+            cursor: pointer;
+            font-weight: 500;
+            background: #e5e7eb;
+            color: var(--text);
+        }
+
+        .btn:hover {
+            background: #d1d5db;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: #fff;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .message {
+            padding: 0.75rem 1rem;
+            border-radius: var(--radius);
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .message.error {
+            background: #fef2f2;
+            color: var(--danger);
+            border: 1px solid #fecaca;
+        }
+
+        .message.success {
+            background: #f0fdf4;
+            color: var(--success);
+            border: 1px solid #bbf7d0;
+        }
+
+        .group-list {
+            list-style: none;
+        }
+
+        .group-list li {
+            padding: 0.4rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .group-list input[type="checkbox"] {
+            width: 1.2rem;
+            height: 1.2rem;
+            accent-color: var(--primary);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        th,
+        td {
+            padding: 0.5rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            font-weight: 600;
+            color: var(--text-light);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .badge-draft {
+            background: #fef9c3;
+            color: #854d0e;
+        }
+
+        .badge-open {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge-closed {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .badge-matched {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+
+        .info {
+            font-size: 0.85rem;
+            color: var(--text-light);
+        }
+
+        .rank {
+            font-size: 0.8rem;
+            color: var(--text-light);
+            margin-left: 0.25rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container" id="app">
+        <h1>TD-Swap</h1>
+        <p class="subtitle">Demandes de permutation de groupes de TD</p>
+
+        <div class="tabs">
+            <div class="tab active" data-view="student" onclick="switchView('student')">Étudiant</div>
+            <div class="tab" data-view="admin" onclick="switchView('admin')">Admin</div>
+        </div>
+
+        <!-- ═══ VUE ÉTUDIANT ═══ -->
+        <div id="view-student">
+            <div class="card" id="stu-login">
+                <h2 style="font-size:1.1rem;margin-bottom:1rem">Identifie-toi</h2>
+                <div class="form-group">
+                    <label>Campagne</label>
+                    <select id="stu-campaign" onchange="state.studentCampaign=this.value"></select>
+                </div>
+                <div class="form-group">
+                    <label>Numéro étudiant</label>
+                    <input type="text" id="stu-number" placeholder="Ex. 2301234">
+                </div>
+                <button class="btn btn-primary" onclick="studentLogin()">Continuer</button>
+                <div id="stu-login-msg"></div>
+            </div>
+
+            <div class="card hidden" id="stu-confirm">
+                <h2 style="font-size:1.1rem;margin-bottom:1rem">Confirme ton identité</h2>
+                <p id="stu-confirm-text" style="margin-bottom:1rem"></p>
+                <div class="actions">
+                    <button class="btn btn-primary" onclick="studentConfirm()">C'est moi</button>
+                    <button class="btn" onclick="studentCancel()">Annuler</button>
+                </div>
+                <div id="stu-confirm-msg"></div>
+            </div>
+
+            <div class="card hidden" id="stu-main">
+                <h2 id="stu-header" style="font-size:1.1rem;margin-bottom:0.5rem"></h2>
+                <p id="stu-current-group" class="info"></p>
+                <div class="form-group" style="margin-top:1rem">
+                    <label style="margin-bottom:0.5rem">Mode de demande</label>
+                    <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
+                        <button class="btn btn-primary" id="mode-groups-btn" onclick="setMode('groups')">Changer de
+                            groupe</button>
+                        <button class="btn" id="mode-swap-btn" onclick="setMode('swap')">Permuter avec un autre
+                            étudiant</button>
+                    </div>
+                </div>
+
+                <!-- Section : changement de groupe -->
+                <div id="mode-groups">
+                    <div class="form-group">
+                        <label>Groupes cibles (1 à 3, par ordre de préférence)</label>
+                        <ul class="group-list" id="stu-groups"></ul>
+                        <p class="info">Cocher dans l'ordre de préférence.</p>
+                    </div>
+                </div>
+
+                <!-- Section : permutation 1-1 -->
+                <div id="mode-swap" class="hidden">
+                    <div class="form-group">
+                        <label>Numéro de l'étudiant avec qui tu veux permuter</label>
+                        <input type="text" id="swap-target" placeholder="Ex. 21436864">
+                    </div>
+                    <div id="swap-status"></div>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-primary" id="stu-submit-btn" onclick="studentSubmit()">Déposer ma
+                        demande</button>
+                    <button class="btn btn-danger hidden" id="stu-withdraw-btn"
+                        onclick="studentWithdraw()">Retirer</button>
+                </div>
+                <div id="stu-msg"></div>
+            </div>
+        </div>
+
+        <!-- ═══ VUE ADMIN ═══ -->
+        <div id="view-admin" class="hidden">
+            <div class="card" id="admin-login">
+                <h2 style="font-size:1.1rem;margin-bottom:1rem">Accès admin</h2>
+                <div class="form-group">
+                    <label>Mot de passe</label>
+                    <input type="password" id="admin-pass" placeholder="••••••••"
+                        onkeydown="if(event.key==='Enter')adminLogin()">
+                </div>
+                <button class="btn btn-primary" onclick="adminLogin()">Déverrouiller</button>
+                <div id="admin-msg"></div>
+            </div>
+
+            <div id="admin-panel" class="hidden">
+                <div class="card">
+                    <h2 style="font-size:1.1rem;margin-bottom:1rem">Campagnes</h2>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nom</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-campaigns-body"></tbody>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <h2 style="font-size:1.1rem;margin-bottom:1rem">Nouvelle campagne</h2>
+                    <div class="form-group"><label>Nom</label><input type="text" id="new-camp-name"
+                            placeholder="Semestre 2 2025-2026"></div>
+                    <div class="form-group"><label>Début (YYYY-MM-DD HH:MM)</label><input type="text"
+                            id="new-camp-start" placeholder="2026-01-15 09:00"></div>
+                    <div class="form-group"><label>Fin (YYYY-MM-DD HH:MM)</label><input type="text" id="new-camp-end"
+                            placeholder="2026-01-31 23:59"></div>
+                    <button class="btn btn-primary" onclick="adminCreateCampaign()">Créer</button>
+                    <div id="admin-create-msg"></div>
+                </div>
+
+                <div class="card hidden" id="admin-detail">
+                    <h2 id="admin-detail-title" style="font-size:1.1rem;margin-bottom:1rem"></h2>
+                    <div id="admin-detail-body"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ─── Config ──────────────────────────────────────────────────────────
+        const ADMIN_PASSWORD = 'changemoi';
+
+        // ─── État ────────────────────────────────────────────────────────────
+        const state = {
+            studentCampaign: null,
+            studentNumber: null,
+            studentData: null,
+        };
+
+        // ─── Utilitaires ─────────────────────────────────────────────────────
+        async function api(method, path, body = null) {
+            const opts = { method, headers: { 'Content-Type': 'application/json' } };
+            if (body) opts.body = JSON.stringify(body);
+            const res = await fetch(path, opts);
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ error: res.statusText }));
+                throw new Error(err.error || 'Erreur serveur');
+            }
+            return res.json();
+        }
+
+        function showMsg(el, text, type = 'error') {
+            el.innerHTML = text ? `<div class="message ${type}">${text}</div>` : '';
+        }
+
+        function switchView(view) {
+            document.querySelectorAll('.tab').forEach(t =>
+                t.classList.toggle('active', t.dataset.view === view));
+            document.getElementById('view-student').classList.toggle('hidden', view !== 'student');
+            document.getElementById('view-admin').classList.toggle('hidden', view !== 'admin');
+        }
+
+        // ─── ÉTUDIANT ────────────────────────────────────────────────────────
+        async function loadCampaigns() {
+            try {
+                const data = await api('GET', '/campaigns');
+                const sel = document.getElementById('stu-campaign');
+                sel.innerHTML = '<option value="">— Choisir une campagne —</option>';
+                (data.campaigns || []).forEach(c => {
+                    if (c.status === 'open') {
+                        sel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+                    }
+                });
+            } catch (e) {
+                showMsg(document.getElementById('stu-login-msg'), 'Erreur : ' + e.message);
+            }
+        }
+
+        async function studentLogin() {
+            const cid = state.studentCampaign;
+            const num = document.getElementById('stu-number').value.trim();
+
+            if (!cid) return showMsg(document.getElementById('stu-login-msg'), 'Choisis une campagne.');
+            if (!num) return showMsg(document.getElementById('stu-login-msg'), 'Entre ton numéro étudiant.');
+
+            try {
+                const data = await api('GET', `/campaigns/${cid}/students/${encodeURIComponent(num)}`);
+                state.studentNumber = num;
+                state.studentData = data;
+
+                // Afficher la confirmation d'identité
+                document.getElementById('stu-login').classList.add('hidden');
+                document.getElementById('stu-confirm').classList.remove('hidden');
+                document.getElementById('stu-confirm-text').innerHTML =
+                    `<strong>${data.surname} ${data.first_name}</strong> — n° ${data.student_number}<br>` +
+                    `<span class="info">Groupe actuel : ${data.current_group}</span>`;
+            } catch (e) {
+                showMsg(document.getElementById('stu-login-msg'), e.message);
+            }
+        }
+
+        function studentConfirm() {
+            document.getElementById('stu-confirm').classList.add('hidden');
+            document.getElementById('stu-main').classList.remove('hidden');
+            document.getElementById('stu-header').textContent =
+                `${state.studentData.surname} ${state.studentData.first_name} (${state.studentData.student_number})`;
+            document.getElementById('stu-current-group').textContent =
+                `Groupe actuel : ${state.studentData.current_group}`;
+
+            // Construire la liste des groupes éligibles
+            const list = document.getElementById('stu-groups');
+            list.innerHTML = '';
+            (state.studentData.eligible_groups || []).forEach((g, idx) => {
+                if (g.name === state.studentData.current_group) return;
+                list.innerHTML += `<li>
+      <input type="checkbox" id="grp-${g.id}" value="${g.name}" data-group-id="${g.id}">
+      <label for="grp-${g.id}">${g.name}</label>
+      <span class="rank" id="rank-${g.id}"></span>
+    </li>`;
+            });
+
+            loadExistingRequest();
+        }
+
+        function studentCancel() {
+            document.getElementById('stu-confirm').classList.add('hidden');
+            document.getElementById('stu-login').classList.remove('hidden');
+            state.studentData = null;
+            state.studentNumber = null;
+        }
+
+        async function loadExistingRequest() {
+            try {
+                const data = await api('GET', `/campaigns/${state.studentCampaign}/requests`);
+                const myReq = (data.requests || []).find(r =>
+                    r.campaign_student_id === state.studentData.id
+                );
+
+                if (myReq) {
+                    const eligible = state.studentData.eligible_groups || [];
+                    (myReq.targets || []).forEach((targetId, idx) => {
+                        const grp = eligible.find(g => g.id === targetId);
+                        if (grp) {
+                            const cb = document.getElementById(`grp-${targetId}`);
+                            if (cb) {
+                                cb.checked = true;
+                                document.getElementById(`rank-${targetId}`).textContent = (idx + 1) + 'e choix';
+                            }
+                        }
+                    });
+                    document.getElementById('stu-submit-btn').textContent = 'Modifier ma demande';
+                    document.getElementById('stu-withdraw-btn').classList.remove('hidden');
+                    showMsg(document.getElementById('stu-msg'),
+                        'Demande du ' + new Date(myReq.first_submitted_at).toLocaleDateString('fr') +
+                        ' ' + new Date(myReq.first_submitted_at).toLocaleTimeString('fr'),
+                        'success');
+                } else {
+                    document.getElementById('stu-submit-btn').textContent = 'Déposer ma demande';
+                    document.getElementById('stu-withdraw-btn').classList.add('hidden');
+                }
+            } catch (e) { /* pas de demande, normal */ }
+        }
+
+        function getSelectedTargets() {
+            // Retourne les noms de groupes cochés, dans l'ordre des checkboxes.
+            const targets = [];
+            document.querySelectorAll('#stu-groups input[type="checkbox"]:checked').forEach(cb => {
+                targets.push(cb.value);
+            });
+            return targets;
+        }
+
+        let currentMode = 'groups';
+
+        function setMode(mode) {
+            currentMode = mode;
+
+            document.getElementById('mode-groups').classList.toggle('hidden', mode !== 'groups');
+            document.getElementById('mode-swap').classList.toggle('hidden', mode !== 'swap');
+
+            document.getElementById('mode-groups-btn').classList.toggle('btn-primary', mode === 'groups');
+            document.getElementById('mode-groups-btn').classList.toggle('btn', mode !== 'groups');
+            document.getElementById('mode-swap-btn').classList.toggle('btn-primary', mode === 'swap');
+            document.getElementById('mode-swap-btn').classList.toggle('btn', mode !== 'swap');
+
+            const submitBtn = document.getElementById('stu-submit-btn');
+            if (mode === 'groups') {
+                submitBtn.textContent = 'Déposer ma demande';
+            } else {
+                submitBtn.textContent = 'Proposer la permutation';
+            }
+        }
+
+        async function studentSubmit() {
+            if (currentMode === 'swap') {
+                return submitSwap();
+            }
+
+            // Mode groupes (code existant)
+            const targets = getSelectedTargets();
+
+            if (targets.length < 1 || targets.length > 3) {
+                return showMsg(document.getElementById('stu-msg'), 'Cochez entre 1 et 3 groupes.');
+            }
+
+            try {
+                const isUpdate = document.getElementById('stu-submit-btn').textContent.includes('Modifier');
+                const method = isUpdate ? 'PUT' : 'POST';
+                const path = isUpdate
+                    ? `/campaigns/${state.studentCampaign}/requests/${encodeURIComponent(state.studentNumber)}`
+                    : `/campaigns/${state.studentCampaign}/requests`;
+
+                const body = { targets };
+                if (!isUpdate) body.student_number = state.studentNumber;
+
+                await api(method, path, body);
+
+                targets.forEach((name, idx) => {
+                    const cb = document.querySelector(`#stu-groups input[value="${name}"]`);
+                    if (cb) {
+                        const span = document.getElementById(`rank-${cb.dataset.groupId}`);
+                        if (span) span.textContent = (idx + 1) + 'e choix';
+                    }
+                });
+
+                showMsg(document.getElementById('stu-msg'),
+                    `Demande ${isUpdate ? 'modifiée' : 'déposée'} : ${targets.join(', ')}`,
+                    'success');
+                document.getElementById('stu-submit-btn').textContent = 'Modifier ma demande';
+                document.getElementById('stu-withdraw-btn').classList.remove('hidden');
+            } catch (e) {
+                showMsg(document.getElementById('stu-msg'), e.message);
+            }
+        }
+
+        async function submitSwap() {
+            const target = document.getElementById('swap-target').value.trim();
+
+            if (!target) {
+                return showMsg(document.getElementById('swap-status'), 'Entre le numéro de l\'étudiant cible.');
+            }
+
+            try {
+                const res = await api('POST', `/campaigns/${state.studentCampaign}/swap-proposals`, {
+                    student_number: state.studentNumber,
+                    target_student_number: target,
+                });
+
+                showMsg(document.getElementById('swap-status'), res.message, res.confirmed ? 'success' : 'error');
+                document.getElementById('stu-submit-btn').textContent = 'Modifier ma permutation';
+                document.getElementById('stu-withdraw-btn').classList.remove('hidden');
+            } catch (e) {
+                showMsg(document.getElementById('swap-status'), e.message);
+            }
+        }
+
+        async function studentWithdraw() {
+            if (!confirm('Retirer ta demande ?')) return;
+
+            try {
+                if (currentMode === 'swap') {
+                    await api('DELETE', `/campaigns/${state.studentCampaign}/swap-proposals`, {
+                        student_number: state.studentNumber,
+                    });
+                    showMsg(document.getElementById('swap-status'), 'Proposition retirée.', 'success');
+                    document.getElementById('swap-target').value = '';
+                    document.getElementById('stu-submit-btn').textContent = 'Permuter avec un autre étudiant';
+                    document.getElementById('stu-withdraw-btn').classList.add('hidden');
+                    return;
+                }
+
+                // Mode groupes (code existant)
+                const data = await api('GET', `/campaigns/${state.studentCampaign}/requests`);
+                const myReq = (data.requests || []).find(r =>
+                    r.campaign_student_id === state.studentData.id
+                );
+                if (!myReq) {
+                    return showMsg(document.getElementById('stu-msg'), 'Aucune demande active.');
+                }
+
+                await api('DELETE', `/campaigns/${state.studentCampaign}/requests/${myReq.id}`);
+                showMsg(document.getElementById('stu-msg'), 'Demande retirée.', 'success');
+
+                document.querySelectorAll('#stu-groups input[type="checkbox"]').forEach(cb => {
+                    cb.checked = false;
+                    const span = document.getElementById(`rank-${cb.dataset.groupId}`);
+                    if (span) span.textContent = '';
+                });
+                document.getElementById('stu-submit-btn').textContent = 'Déposer ma demande';
+                document.getElementById('stu-withdraw-btn').classList.add('hidden');
+            } catch (e) {
+                showMsg(document.getElementById('stu-msg'), e.message);
+            }
+        }
+
+        // ─── ADMIN ───────────────────────────────────────────────────────────
+        function adminLogin() {
+            const pass = document.getElementById('admin-pass').value;
+            if (pass !== ADMIN_PASSWORD) {
+                return showMsg(document.getElementById('admin-msg'), 'Mot de passe incorrect.');
+            }
+            document.getElementById('admin-login').classList.add('hidden');
+            document.getElementById('admin-panel').classList.remove('hidden');
+            adminLoadCampaigns();
+        }
+
+        async function adminLoadCampaigns() {
+            try {
+                const data = await api('GET', '/campaigns');
+                const tbody = document.getElementById('admin-campaigns-body');
+                tbody.innerHTML = '';
+
+                (data.campaigns || []).forEach(c => {
+                    let actions = '';
+                    if (c.status === 'draft') actions = `<button class="btn btn-success" onclick="adminAct(${c.id},'open')">Ouvrir</button>`;
+                    if (c.status === 'open') actions = `<button class="btn" onclick="adminAct(${c.id},'close')">Fermer</button>`;
+                    if (c.status === 'closed') actions = `<button class="btn btn-primary" onclick="adminAct(${c.id},'match')">Match</button>
+                                           <button class="btn" onclick="adminDetail(${c.id})">Détail</button>`;
+                    if (c.status === 'matched') actions = `<button class="btn" onclick="adminDetail(${c.id})">Résultat</button>`;
+
+                    tbody.innerHTML += `<tr>
+        <td>${c.name}</td>
+        <td><span class="badge badge-${c.status}">${c.status}</span></td>
+        <td class="actions" style="display:flex;gap:0.4rem">${actions}</td>
+      </tr>`;
+                });
+            } catch (e) {
+                showMsg(document.getElementById('admin-create-msg'), e.message);
+            }
+        }
+
+        async function adminAct(id, action) {
+            try {
+                if (action === 'match') {
+                    if (!confirm('Lancer le matching ? Cette opération peut prendre quelques minutes.')) return;
+                    showMsg(document.getElementById('admin-create-msg'), 'Matching en cours…', 'success');
+                }
+                const res = await api('POST', `/campaigns/${id}/${action}`);
+                if (action === 'match') {
+                    showMsg(document.getElementById('admin-create-msg'),
+                        `Matching terminé : ${res.count} étudiants déplacés.`,
+                        'success');
+                }
+                adminLoadCampaigns();
+            } catch (e) {
+                showMsg(document.getElementById('admin-create-msg'), e.message);
+            }
+        }
+
+        async function adminCreateCampaign() {
+            const name = document.getElementById('new-camp-name').value.trim();
+            const starts_at = document.getElementById('new-camp-start').value.trim();
+            const closes_at = document.getElementById('new-camp-end').value.trim();
+
+            if (!name || !starts_at || !closes_at) {
+                return showMsg(document.getElementById('admin-create-msg'), 'Remplis tous les champs.');
+            }
+
+            try {
+                await api('POST', '/campaigns', { name, starts_at, closes_at });
+                showMsg(document.getElementById('admin-create-msg'), 'Campagne créée.', 'success');
+                document.getElementById('new-camp-name').value = '';
+                adminLoadCampaigns();
+            } catch (e) {
+                showMsg(document.getElementById('admin-create-msg'), e.message);
+            }
+        }
+
+        async function adminDetail(campaignId) {
+            try {
+                const [camp, reqs, matches] = await Promise.all([
+                    api('GET', `/campaigns/${campaignId}`),
+                    api('GET', `/campaigns/${campaignId}/requests/joined`),
+                    api('GET', `/campaigns/${campaignId}/matches`).catch(() => ({ matches: [] })),
+                ]);
+
+                let html = `<h3 style="margin-bottom:0.5rem">Groupes</h3><table>
+      <thead><tr><th>Nom</th><th>Capacité</th></tr></thead><tbody>`;
+                (camp.groups || []).forEach(g => {
+                    html += `<tr><td>${g.name}</td><td>${g.capacity}</td></tr>`;
+                });
+                html += `</tbody></table>`;
+
+                html += `<h3 style="margin:1rem 0 0.5rem">Demandes actives (${(reqs.requests || []).length})</h3>`;
+                if ((reqs.requests || []).length === 0) {
+                    html += `<p class="info">Aucune demande.</p>`;
+                } else {
+                    html += `<table><thead><tr><th>Étudiant</th><th>Numéro</th><th>Cibles</th><th>Déposée le</th></tr></thead><tbody>`;
+                    (reqs.requests || []).forEach(r => {
+                        html += `<tr>
+          <td>${r.surname} ${r.first_name}</td>
+          <td>${r.student_number}</td>
+          <td>${(r.targets || []).join(', ')}</td>
+          <td>${new Date(r.first_submitted_at).toLocaleString('fr')}</td>
+        </tr>`;
+                    });
+                    html += `</tbody></table>`;
+                }
+
+                if ((matches.matches || []).length > 0) {
+                    html += `<h3 style="margin:1rem 0 0.5rem">Résultat du matching</h3>
+        <table><thead><tr><th>Étudiant</th><th>Numéro</th><th>De</th><th>Vers</th><th>Rang</th></tr></thead><tbody>`;
+                    (matches.matches || []).forEach(m => {
+                        html += `<tr>
+          <td>${m.surname} ${m.first_name}</td>
+          <td>${m.student_number}</td>
+          <td>${m.from_group}</td>
+          <td><strong>${m.to_group}</strong></td>
+          <td>${m.preference_rank}</td>
+        </tr>`;
+                    });
+                    html += `</tbody></table>`;
+                }
+
+                document.getElementById('admin-detail-title').textContent = camp.name;
+                document.getElementById('admin-detail-body').innerHTML = html;
+                document.getElementById('admin-detail').classList.remove('hidden');
+            } catch (e) {
+                showMsg(document.getElementById('admin-create-msg'), e.message);
+            }
+        }
+
+        // ─── Init ────────────────────────────────────────────────────────────
+        document.addEventListener('DOMContentLoaded', loadCampaigns);
+    </script>
+</body>
+
+</html>

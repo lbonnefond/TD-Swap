@@ -12,7 +12,8 @@ final class AssignmentImporter
 {
     public function __construct(
         private readonly PDO $pdo
-    ) {}
+    ) {
+    }
 
     /**
      * Importe la correspondance profils/groupes puis les affectations
@@ -88,7 +89,8 @@ final class AssignmentImporter
 
         $rows = $sheet->toArray(null, true, true, true);
 
-        if (($rows[1]['A'] ?? null) !== 'Profil'
+        if (
+            ($rows[1]['A'] ?? null) !== 'Profil'
             || ($rows[1]['B'] ?? null) !== 'Groupes'
         ) {
             throw new RuntimeException(
@@ -155,10 +157,12 @@ final class AssignmentImporter
             /*
              * Cas normal : un seul groupe.
              */
-            if (preg_match(
-                '/^(?:A\d+[abc]?|B\d+[ab]?|Bind|Santé\s+\d+)$/u',
-                $part
-            )) {
+            if (
+                preg_match(
+                    '/^(?:A\d+[abc]?|B\d+[ab]?|Bind|Santé\s+\d+)$/u',
+                    $part
+                )
+            ) {
                 $groups[] = $part;
                 continue;
             }
@@ -166,11 +170,13 @@ final class AssignmentImporter
             /*
              * Cas "A8a A8b" : deux groupes accolés sans virgule.
              */
-            if (preg_match_all(
-                '/(?:A\d+[abc]?|B\d+[ab]?|Bind|Santé\s+\d+)/u',
-                $part,
-                $matches
-            )) {
+            if (
+                preg_match_all(
+                    '/(?:A\d+[abc]?|B\d+[ab]?|Bind|Santé\s+\d+)/u',
+                    $part,
+                    $matches
+                )
+            ) {
                 $reconstructed = trim(
                     preg_replace(
                         '/\s+/u',
@@ -201,7 +207,7 @@ final class AssignmentImporter
     private function insertCorrespondence(array $correspondence): void
     {
         $profileStmt = $this->pdo->prepare(
-            'INSERT INTO profiles (name) VALUES (:name)'
+            'INSERT OR IGNORE INTO profiles (name) VALUES (:name)'
         );
 
         $profileIdStmt = $this->pdo->prepare(
@@ -218,8 +224,7 @@ final class AssignmentImporter
         );
 
         $linkStmt = $this->pdo->prepare(
-            'INSERT INTO profile_groups (profile_id, group_id)
-         VALUES (:profile_id, :group_id)'
+            'INSERT OR IGNORE INTO profile_groups (profile_id, group_id) VALUES (:profile_id, :group_id)'
         );
 
         foreach ($correspondence as $profile => $groups) {
@@ -345,7 +350,7 @@ final class AssignmentImporter
             if ($number === '' || $profile === '' || $group === '') {
                 throw new RuntimeException(
                     "Affectation étudiante incomplète pour la ligne "
-                        . ($count + 2)
+                    . ($count + 2)
                 );
             }
 
@@ -383,7 +388,7 @@ final class AssignmentImporter
             if ($allowedStmt->fetchColumn() === false) {
                 throw new RuntimeException(
                     "Groupe {$group} non autorisé pour le profil "
-                        . "{$profile} (étudiant {$number})"
+                    . "{$profile} (étudiant {$number})"
                 );
             }
 

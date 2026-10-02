@@ -45,9 +45,24 @@ final class MatchingService
         $campaignRequests =
             $this->requestRepository->findActiveByCampaign($campaignId);
 
+        $stmt = $this->pdo->prepare(
+            'SELECT sp.student_id
+             FROM swap_proposals sp
+             JOIN swap_proposals sp2
+               ON sp2.campaign_id = sp.campaign_id
+              AND sp2.student_id = sp.target_student_id
+              AND sp2.target_student_id = sp.student_id
+             WHERE sp.campaign_id = ?'
+        );
+        $stmt->execute([$campaignId]);
+        $swapStudentIds = array_map('intval', $stmt->fetchAll(\PDO::FETCH_COLUMN));
+
         $requests = [];
 
         foreach ($campaignRequests as $campaignRequest) {
+            if (in_array($campaignRequest->campaignStudentId, $swapStudentIds, true)) {
+                continue;
+            }
             $studentStatement = $this->pdo->prepare(
                 'SELECT initial_group_id
                  FROM campaign_students
