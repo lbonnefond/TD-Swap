@@ -23,8 +23,9 @@ final class CampaignRepository
                 closes_at,
                 status,
                 matched_at,
-                created_at
-            ) VALUES (?, ?, ?, ?, ?, ?)'
+                created_at,
+                access_code
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
 
         $createdAt = $campaign->createdAt
@@ -37,6 +38,7 @@ final class CampaignRepository
             $campaign->status,
             $campaign->matchedAt?->format(DATE_ATOM),
             $createdAt->format(DATE_ATOM),
+            $campaign->accessCode,
         ]);
 
         return new Campaign(
@@ -47,6 +49,7 @@ final class CampaignRepository
             $campaign->status,
             $campaign->matchedAt,
             $createdAt,
+            $campaign->accessCode,
         );
     }
 
@@ -60,7 +63,8 @@ final class CampaignRepository
                 closes_at,
                 status,
                 matched_at,
-                created_at
+                created_at,
+                access_code
              FROM campaigns
              WHERE id = ?'
         );
@@ -118,6 +122,7 @@ final class CampaignRepository
             $row['created_at'] !== null
                 ? new DateTimeImmutable($row['created_at'])
                 : null,
+            $row['access_code'],
         );
     }
 
@@ -131,7 +136,8 @@ final class CampaignRepository
             closes_at,
             status,
             matched_at,
-            created_at
+            created_at,
+            access_code
          FROM campaigns
          ORDER BY starts_at DESC, id DESC'
         );

@@ -47,7 +47,6 @@ header('Content-Type: application/json; charset=utf-8');
 $method = $_SERVER['REQUEST_METHOD'];
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
-// Fichiers statiques (app.html, css, js…) : on laisse le serveur les servir.
 if ($path !== '/' && is_file(__DIR__ . $path)) {
     return false;
 }
@@ -59,11 +58,26 @@ if ($method === 'GET' && $path === '/') {
     exit;
 }
 
-// Redirect racine vers l'interface
-if ($method === 'GET' && $path === '/') {
-    header('Location: /app.html');
-    http_response_code(302);
-    exit;
+function requireCampusAccess(\PDO $pdo, int $campaignId, array $input): void
+{
+    $stmt = $pdo->prepare('SELECT access_code FROM campaigns WHERE id = ?');
+    $stmt->execute([$campaignId]);
+    $expected = $stmt->fetchColumn();
+
+    if ($expected === false) {
+        throw new \DomainException('Campagne introuvable.');
+    }
+
+    if ($expected === null || $expected === '') {
+        // Pas de code défini : on laisse passer (rétro-compat)
+        return;
+    }
+
+    $provided = trim((string) ($input['access_code'] ?? ''));
+
+    if ($provided === '' || !hash_equals((string) $expected, $provided)) {
+        throw new \DomainException('Code campagne incorrect.');
+    }
 }
 
 try {
@@ -90,6 +104,7 @@ try {
             name: $input['name'] ?? '',
             startsAt: new DateTimeImmutable($input['starts_at'] ?? ''),
             closesAt: new DateTimeImmutable($input['closes_at'] ?? ''),
+            accessCode: $input['access_code'] ?? null,
         );
 
         $created = $campaignService->createCampaign($campaign);
@@ -140,6 +155,8 @@ try {
         $campaignId = (int) $matches[1];
 
         $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
+
+        requireCampusAccess($pdo, $campaignId, $input);
 
         $studentNumber = trim((string) ($input['student_number'] ?? ''));
         $targetNumber = trim((string) ($input['target_student_number'] ?? ''));
@@ -295,6 +312,8 @@ try {
         $campaignId = (int) $matches[1];
         $studentNumber = rawurldecode($matches[2]);
 
+        requireCampusAccess($pdo, $campaignId, $_GET);
+
         $statement = $pdo->prepare(
             'SELECT
             cs.id,
@@ -367,6 +386,8 @@ try {
             512,
             JSON_THROW_ON_ERROR
         );
+
+        requireCampusAccess($pdo, $campaignId, $input);
 
         $studentNumber = trim((string) ($input['student_number'] ?? ''));
         $targetNames = $input['targets'] ?? null;
@@ -468,6 +489,8 @@ try {
             JSON_THROW_ON_ERROR
         );
 
+        requireCampusAccess($pdo, $campaignId, $input);
+
         $targetNames = $input['targets'] ?? null;
 
         if (!is_array($targetNames) || !array_is_list($targetNames)) {
@@ -544,6 +567,8 @@ try {
         $campaignId = (int) $matches[1];
         $studentNumber = $matches[2];
 
+        requireCampusAccess($pdo, $campaignId, $_GET);
+
         try {
             $result = $requestService->withdrawRequest(
                 $campaignId,
@@ -582,13 +607,11 @@ try {
         $campaignId = (int) $matches[1];
 
         $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
+
+        requireCampusAccess($pdo, $campaignId, $input);
+
         $studentNumber = trim((string) ($input['student_number'] ?? ''));
 
-        $stmt = $pdo->prepare(
-            'DELETE FROM swap_proposals
-             WHERE campaign_id = ? AND student_number = ?'
-        );
-        // Actually, swap_proposals doesn't have student_number, it has student_id
         $stmt = $pdo->prepare(
             'DELETE FROM swap_proposals
              WHERE campaign_id = ? AND student_id = (

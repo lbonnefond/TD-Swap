@@ -223,5 +223,35 @@ SQL);
     CREATE INDEX IF NOT EXISTS idx_matches_campaign
     ON matches(campaign_id)
 SQL);
+
+        $pdo->exec(<<<'SQL'
+    CREATE TABLE IF NOT EXISTS swap_proposals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        campaign_id INTEGER NOT NULL,
+        student_id INTEGER NOT NULL,
+        target_student_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+
+        UNIQUE (campaign_id, student_id),
+
+        FOREIGN KEY (campaign_id)
+            REFERENCES campaigns(id) ON DELETE CASCADE,
+
+        FOREIGN KEY (student_id)
+            REFERENCES campaign_students(id) ON DELETE CASCADE,
+
+        FOREIGN KEY (target_student_id)
+            REFERENCES campaign_students(id) ON DELETE CASCADE
+    )
+SQL);
+
+        $colExists = $pdo->query(
+            "SELECT 1 FROM pragma_table_info('campaigns') WHERE name='access_code'"
+        )->fetchColumn();
+
+        if ($colExists === false) {
+            $pdo->exec('ALTER TABLE campaigns ADD COLUMN access_code TEXT');
+        }
+
     }
 }

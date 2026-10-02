@@ -276,6 +276,10 @@
                     <label>Numéro étudiant</label>
                     <input type="text" id="stu-number" placeholder="Ex. 2301234">
                 </div>
+                <div class="form-group">
+                    <label>Code campagne</label>
+                    <input type="text" id="stu-code" placeholder="Ex. TD-S2-2026">
+                </div>
                 <button class="btn btn-primary" onclick="studentLogin()">Continuer</button>
                 <div id="stu-login-msg"></div>
             </div>
@@ -366,6 +370,8 @@
                             id="new-camp-start" placeholder="2026-01-15 09:00"></div>
                     <div class="form-group"><label>Fin (YYYY-MM-DD HH:MM)</label><input type="text" id="new-camp-end"
                             placeholder="2026-01-31 23:59"></div>
+                    <div class="form-group"><label>Code campagne</label><input type="text" id="new-camp-code"
+                            placeholder="TD-S2-2026"></div>
                     <button class="btn btn-primary" onclick="adminCreateCampaign()">Créer</button>
                     <div id="admin-create-msg"></div>
                 </div>
@@ -431,12 +437,15 @@
         async function studentLogin() {
             const cid = state.studentCampaign;
             const num = document.getElementById('stu-number').value.trim();
+            const code = document.getElementById('stu-code').value.trim();
 
             if (!cid) return showMsg(document.getElementById('stu-login-msg'), 'Choisis une campagne.');
             if (!num) return showMsg(document.getElementById('stu-login-msg'), 'Entre ton numéro étudiant.');
+            if (!code) return showMsg(document.getElementById('stu-login-msg'), 'Entre le code campagne.');
 
             try {
-                const data = await api('GET', `/campaigns/${cid}/students/${encodeURIComponent(num)}`);
+                const data = await api('GET', `/campaigns/${cid}/students/${encodeURIComponent(num)}?access_code=${encodeURIComponent(code)}`);
+                state.accessCode = code;
                 state.studentNumber = num;
                 state.studentData = data;
 
@@ -562,7 +571,7 @@
                     ? `/campaigns/${state.studentCampaign}/requests/${encodeURIComponent(state.studentNumber)}`
                     : `/campaigns/${state.studentCampaign}/requests`;
 
-                const body = { targets };
+                const body = { targets, access_code: state.accessCode };
                 if (!isUpdate) body.student_number = state.studentNumber;
 
                 await api(method, path, body);
@@ -596,6 +605,7 @@
                 const res = await api('POST', `/campaigns/${state.studentCampaign}/swap-proposals`, {
                     student_number: state.studentNumber,
                     target_student_number: target,
+                    access_code: state.accessCode,
                 });
 
                 showMsg(document.getElementById('swap-status'), res.message, res.confirmed ? 'success' : 'error');
@@ -613,6 +623,7 @@
                 if (currentMode === 'swap') {
                     await api('DELETE', `/campaigns/${state.studentCampaign}/swap-proposals`, {
                         student_number: state.studentNumber,
+                        access_code: state.accessCode,
                     });
                     showMsg(document.getElementById('swap-status'), 'Proposition retirée.', 'success');
                     document.getElementById('swap-target').value = '';
@@ -630,7 +641,7 @@
                     return showMsg(document.getElementById('stu-msg'), 'Aucune demande active.');
                 }
 
-                await api('DELETE', `/campaigns/${state.studentCampaign}/requests/${myReq.id}`);
+                await api('DELETE', `/campaigns/${state.studentCampaign}/requests/${myReq.id}?access_code=${encodeURIComponent(state.accessCode)}`);
                 showMsg(document.getElementById('stu-msg'), 'Demande retirée.', 'success');
 
                 document.querySelectorAll('#stu-groups input[type="checkbox"]').forEach(cb => {
@@ -703,13 +714,14 @@
             const name = document.getElementById('new-camp-name').value.trim();
             const starts_at = document.getElementById('new-camp-start').value.trim();
             const closes_at = document.getElementById('new-camp-end').value.trim();
+            const code = document.getElementById('new-camp-code').value.trim();
 
             if (!name || !starts_at || !closes_at) {
                 return showMsg(document.getElementById('admin-create-msg'), 'Remplis tous les champs.');
             }
 
             try {
-                await api('POST', '/campaigns', { name, starts_at, closes_at });
+                await api('POST', '/campaigns', { name, starts_at, closes_at, access_code: code || null });
                 showMsg(document.getElementById('admin-create-msg'), 'Campagne créée.', 'success');
                 document.getElementById('new-camp-name').value = '';
                 adminLoadCampaigns();

@@ -14,6 +14,7 @@ final class Campaign
         public readonly string $status = 'draft',
         public readonly ?\DateTimeImmutable $matchedAt = null,
         public readonly ?\DateTimeImmutable $createdAt = null,
+        public readonly ?string $accessCode = null,
     ) {
         if ($this->name === '') {
             throw new \InvalidArgumentException(

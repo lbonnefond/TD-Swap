@@ -1,0 +1,9 @@
+RewriteEngine On
+
+# Si c'est un fichier ou un dossier existant (app.html, images…), on le sert directement
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Tout le reste (les routes API) passe par index.php
+RewriteRule ^ index.php [QSA,L]
