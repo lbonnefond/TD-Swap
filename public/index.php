@@ -47,10 +47,6 @@ header('Content-Type: application/json; charset=utf-8');
 $method = $_SERVER['REQUEST_METHOD'];
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
-if ($path !== '/' && is_file(__DIR__ . $path)) {
-    return false;
-}
-
 // Redirect racine vers l'interface
 if ($method === 'GET' && $path === '/') {
     header('Location: /app.html');
@@ -701,6 +697,41 @@ try {
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT
         );
 
+        exit;
+    }
+
+    if (
+        $method === 'POST'
+        && preg_match('#^/campaigns/(\d+)/import$#', $path, $matches)
+    ) {
+        $campaignId = (int) $matches[1];
+
+        if (empty($_FILES['assignments']) || empty($_FILES['correspondence'])) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Les deux fichiers sont requis (assignments + correspondence).']);
+            exit;
+        }
+
+        $assignmentsFile = $_FILES['assignments']['tmp_name'];
+        $correspondenceFile = $_FILES['correspondence']['tmp_name'];
+
+        $result = $campaignService->importData(
+            $campaignId,
+            $assignmentsFile,
+            $correspondenceFile
+        );
+
+        http_response_code(201);
+
+        echo json_encode(
+            [
+                'campaign_id' => $campaignId,
+                'students' => $result['students'],
+                'profiles' => $result['profiles'],
+                'message' => "Import terminé : {$result['students']} étudiants.",
+            ],
+            JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT
+        );
         exit;
     }
 

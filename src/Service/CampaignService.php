@@ -25,10 +25,6 @@ final class CampaignService
                 $campaign
             );
 
-            $this->snapshotGroups($createdCampaign->id);
-            $this->snapshotStudents($createdCampaign->id);
-            $this->snapshotProfileGroups($createdCampaign->id);
-
             $this->pdo->commit();
 
             return $createdCampaign;
@@ -41,82 +37,299 @@ final class CampaignService
         }
     }
 
-    private function snapshotGroups(int $campaignId): void
+    public function importData(int $campaignId, string $assignmentsFile, string $correspondenceFile): array
     {
-        $statement = $this->pdo->prepare(
-            'INSERT INTO campaign_groups (
-                campaign_id,
-                group_id,
-                name,
-                capacity
-            )
-            SELECT
-                ?,
-                id,
-                name,
-                capacity
-            FROM groups'
-        );
+        $campaign = $this->requireCampaign($campaignId);
 
-        $statement->execute([$campaignId]);
+        if ($campaign->status !== 'draft') {
+            throw new \DomainException(
+                "Seule une campagne draft peut recevoir un import."
+            );
+        }
+
+        $this->pdo->beginTransaction();
+
+        try {
+            $correspondence = $this->readCorrespondence($correspondenceFile);
+            $studentCount = $this->importCampaign(
+                $campaignId,
+                $correspondence,
+                $assignmentsFile
+            );
+
+            $this->pdo->commit();
+
+            return [
+                'students' => $studentCount,
+                'profiles' => count($correspondence),
+            ];
+        } catch (\Throwable $exception) {
+            $this->pdo->rollBack();
+            throw $exception;
+        }
     }
 
-    private function snapshotStudents(int $campaignId): void
+    /**
+     * @return array<string, list<string>> profil => liste de groupes
+     */
+    private function readCorrespondence(string $filename): array
     {
-        $statement = $this->pdo->prepare(
-            'INSERT INTO campaign_students (
-                campaign_id,
-                student_id,
-                student_number,
-                surname,
-                first_name,
-                profile_id,
-                initial_group_id
-            )
-            SELECT
-                ?,
-                s.id,
-                s.student_number,
-                s.surname,
-                s.first_name,
-                s.profile_id,
-                cg.id
-            FROM students s
-            JOIN campaign_groups cg
-              ON cg.campaign_id = ?
-             AND cg.group_id = s.initial_group_id'
-        );
+        $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($filename);
+        $sheet = $spreadsheet->getSheetByName('Feuil2');
 
-        $statement->execute([
-            $campaignId,
-            $campaignId,
-        ]);
+        if ($sheet === null) {
+            throw new \RuntimeException("La feuille 'Feuil2' est introuvable.");
+        }
+
+        $rows = $sheet->toArray(null, true, true, true);
+
+        if (($rows[1]['A'] ?? null) !== 'Profil'
+            || ($rows[1]['B'] ?? null) !== 'Groupes'
+        ) {
+            throw new \RuntimeException("En-tête inattendue dans 'Feuil2'.");
+        }
+
+        $result = [];
+
+        foreach (array_slice($rows, 1) as $row) {
+            $profile = trim((string) ($row['A'] ?? ''));
+            $groupsText = trim((string) ($row['B'] ?? ''));
+
+            if ($profile === '' && $groupsText === '') {
+                continue;
+            }
+
+            if ($profile === '' || $groupsText === '') {
+                throw new \RuntimeException('Ligne de correspondance incomplète.');
+            }
+
+            if (isset($result[$profile])) {
+                throw new \RuntimeException("Profil dupliqué : {$profile}");
+            }
+
+            $groups = $this->parseGroupList($groupsText);
+
+            if ($groups === []) {
+                throw new \RuntimeException("Aucun groupe pour le profil : {$profile}");
+            }
+
+            $result[$profile] = $groups;
+        }
+
+        return $result;
     }
 
-    private function snapshotProfileGroups(int $campaignId): void
+    /**
+     * @return list
+     */
+    private function parseGroupList(string $text): array
     {
-        $statement = $this->pdo->prepare(
-            'INSERT INTO campaign_profile_groups (
-                campaign_id,
-                profile_id,
-                campaign_group_id
-            )
-            SELECT
-                ?,
-                pg.profile_id,
-                cg.id
-            FROM profile_groups pg
-            JOIN campaign_groups cg
-              ON cg.campaign_id = ?
-             AND cg.group_id = pg.group_id'
-        );
+        $parts = preg_split('/\s*,\s*/', $text) ?: [];
+        $groups = [];
 
-        $statement->execute([
-            $campaignId,
-            $campaignId,
-        ]);
+        foreach ($parts as $part) {
+            $part = trim($part);
+
+            if ($part === '') {
+                continue;
+            }
+
+            if (preg_match('/^(?:A\d+[abc]?|B\d+[ab]?|Bind|Santé\s+\d+)$/u', $part)) {
+                $groups[] = $part;
+                continue;
+            }
+
+            if (preg_match_all('/(?:A\d+[abc]?|B\d+[ab]?|Bind|Santé\s+\d+)/u', $part, $matches)) {
+                $reconstructed = trim(preg_replace('/\s+/u', ' ', implode(' ', $matches[0])));
+
+                if ($reconstructed === $part) {
+                    foreach ($matches[0] as $group) {
+                        $groups[] = trim($group);
+                    }
+                    continue;
+                }
+            }
+
+            throw new \RuntimeException("Groupe non reconnu : {$part}");
+        }
+
+        return array_values(array_unique($groups));
     }
 
+    /**
+     * @param array<string, list<string>> $correspondence
+     */
+    private function importCampaign(
+        int $campaignId,
+        array $correspondence,
+        string $assignmentsFile
+    ): int {
+        // ─── 1. Créer les campaign_groups ───
+        $groupStmt = $this->pdo->prepare(
+            'INSERT OR IGNORE INTO groups (name, capacity) VALUES (:name, 0)'
+        );
+        $groupIdStmt = $this->pdo->prepare(
+            'SELECT id FROM groups WHERE name = :name'
+        );
+        $cgStmt = $this->pdo->prepare(
+            'INSERT INTO campaign_groups (campaign_id, group_id, name, capacity)
+             VALUES (?, ?, ?, 0)'
+        );
+
+        $campaignGroupId = []; // group_name => campaign_group_id
+
+        foreach ($correspondence as $profile => $groups) {
+            foreach ($groups as $groupName) {
+                if (isset($campaignGroupId[$groupName])) {
+                    continue;
+                }
+
+                $groupStmt->execute(['name' => $groupName]);
+                $groupIdStmt->execute(['name' => $groupName]);
+                $globalGroupId = (int) $groupIdStmt->fetchColumn();
+
+                $cgStmt->execute([$campaignId, $globalGroupId, $groupName]);
+                $campaignGroupId[$groupName] = (int) $this->pdo->lastInsertId();
+            }
+        }
+
+        // ─── 2. Créer les campaign_profile_groups ───
+        $profileStmt = $this->pdo->prepare(
+            'INSERT OR IGNORE INTO profiles (name) VALUES (:name)'
+        );
+        $profileIdStmt = $this->pdo->prepare(
+            'SELECT id FROM profiles WHERE name = :name'
+        );
+        $cpgStmt = $this->pdo->prepare(
+            'INSERT OR IGNORE INTO campaign_profile_groups
+             (campaign_id, profile_id, campaign_group_id)
+             VALUES (?, ?, ?)'
+        );
+
+        foreach ($correspondence as $profile => $groups) {
+            $profileStmt->execute(['name' => $profile]);
+            $profileIdStmt->execute(['name' => $profile]);
+            $profileId = (int) $profileIdStmt->fetchColumn();
+
+            foreach ($groups as $groupName) {
+                $cpgStmt->execute([
+                    $campaignId,
+                    $profileId,
+                    $campaignGroupId[$groupName],
+                ]);
+            }
+        }
+
+        // ─── 3. Importer les étudiants depuis Feuil1 ───
+        $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($assignmentsFile);
+        $sheet = $spreadsheet->getSheetByName('Feuil1');
+
+        if ($sheet === null) {
+            throw new \RuntimeException("La feuille 'Feuil1' est introuvable.");
+        }
+
+        $rows = $sheet->toArray(null, true, true, true);
+
+        $expectedHeader = ['N° étudiant', 'Nom', 'Prénom', 'Profil', 'Groupe'];
+        $header = [
+            trim((string) ($rows[1]['A'] ?? '')),
+            trim((string) ($rows[1]['B'] ?? '')),
+            trim((string) ($rows[1]['C'] ?? '')),
+            trim((string) ($rows[1]['D'] ?? '')),
+            trim((string) ($rows[1]['E'] ?? '')),
+        ];
+
+        if ($header !== $expectedHeader) {
+            throw new \RuntimeException("En-tête inattendue dans 'Feuil1'.");
+        }
+
+        $studentStmt = $this->pdo->prepare(
+            'INSERT OR IGNORE INTO students
+             (student_number, surname, first_name, profile_id, initial_group_id)
+             VALUES (:student_number, :surname, :first_name, :profile_id, :initial_group_id)'
+        );
+
+        $csStmt = $this->pdo->prepare(
+            'INSERT INTO campaign_students
+             (campaign_id, student_id, student_number, surname, first_name, profile_id, initial_group_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)'
+        );
+
+        $capacityStmt = $this->pdo->prepare(
+            'UPDATE campaign_groups SET capacity = capacity + 1 WHERE id = ?'
+        );
+
+        $count = 0;
+
+        foreach (array_slice($rows, 1) as $row) {
+            $number = trim((string) ($row['A'] ?? ''));
+            $surname = trim((string) ($row['B'] ?? ''));
+            $firstName = trim((string) ($row['C'] ?? ''));
+            $profile = trim((string) ($row['D'] ?? ''));
+            $group = trim((string) ($row['E'] ?? ''));
+
+            if ($number === '' && $surname === '' && $firstName === ''
+                && $profile === '' && $group === ''
+            ) {
+                continue;
+            }
+
+            if ($number === '' || $profile === '' || $group === '') {
+                throw new \RuntimeException(
+                    "Affectation étudiante incomplète : {$number}"
+                );
+            }
+
+            // Vérifier l'éligibilité
+            $eligible = $correspondence[$profile] ?? [];
+            if (!in_array($group, $eligible, true)) {
+                throw new \RuntimeException(
+                    "Groupe {$group} non autorisé pour le profil {$profile} (étudiant {$number})"
+                );
+            }
+
+            // Upsert dans le référentiel global
+            $profileIdStmt->execute(['name' => $profile]);
+            $profileId = (int) $profileIdStmt->fetchColumn();
+
+            $groupIdStmt->execute(['name' => $group]);
+            $globalGroupId = (int) $groupIdStmt->fetchColumn();
+
+            $studentStmt->execute([
+                'student_number' => $number,
+                'surname' => $surname,
+                'first_name' => $firstName,
+                'profile_id' => $profileId,
+                'initial_group_id' => $globalGroupId,
+            ]);
+
+            // Récupérer l'id de l'étudiant
+            $findStudent = $this->pdo->prepare(
+                'SELECT id FROM students WHERE student_number = :num'
+            );
+            $findStudent->execute(['num' => $number]);
+            $studentId = (int) $findStudent->fetchColumn();
+
+            // Insérer dans campaign_students
+            $csStmt->execute([
+                $campaignId,
+                $studentId,
+                $number,
+                $surname,
+                $firstName,
+                $profileId,
+                $campaignGroupId[$group],
+            ]);
+
+            // Incrémenter la capacité du groupe de campagne
+            $capacityStmt->execute([$campaignGroupId[$group]]);
+
+            $count++;
+        }
+
+        return $count;
+    }
+    
     public function openCampaign(
         int $campaignId,
         \DateTimeImmutable $now,

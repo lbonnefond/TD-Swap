@@ -256,8 +256,16 @@
 
 <body>
     <div class="container" id="app">
-        <h1>TD-Swap</h1>
-        <p class="subtitle">Demandes de permutation de groupes de TD</p>
+        <h1>Formulaire de demande de changement de groupe de TD/TP</h1>
+        <p class="subtitle">
+            Cet outil permet aux étudiants de demander un changement de groupe de TD/TP :
+            soit un changement vers d'autres groupes, soit une permutation 1&nbsp;à&nbsp;1 avec un autre étudiant.
+        </p>
+        <div class="message" style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;margin-bottom:1.5rem">
+            ⚠️ Outil <strong>expérimental</strong>, encore en cours de développement. Aucune garantie de bon
+            fonctionnement. Ne déposez de demande que si vous en comprenez les effets ; en cas d'incertitude,
+            contactez le responsable de l'outil.
+        </div>
 
         <div class="tabs">
             <div class="tab active" data-view="student" onclick="switchView('student')">Étudiant</div>
@@ -287,6 +295,21 @@
             <div class="card hidden" id="stu-confirm">
                 <h2 style="font-size:1.1rem;margin-bottom:1rem">Confirme ton identité</h2>
                 <p id="stu-confirm-text" style="margin-bottom:1rem"></p>
+
+                <div class="card" style="background:#f8fafc;margin-bottom:1rem;padding:1rem">
+                    <p style="margin-bottom:0.5rem"><strong>Deux façons de demander :</strong></p>
+                    <ul style="margin-left:1.25rem;margin-bottom:0">
+                        <li style="margin-bottom:0.5rem"><strong>Changer de groupe</strong> : tu listes jusqu'à 3
+                            groupes souhaités, par ordre de préférence. Le système cherche à satisfaire un maximum de
+                            demandes en réorganisant les groupes (places égales).</li>
+                        <li><strong>Permuter avec un autre étudiant</strong> : tu proposes un échange de groupe avec un
+                            étudiant précis. Il n'est confirmé que si <em>l'autre étudiant fait la même proposition en
+                                retour</em>. C'est un échange direct, garanti pour vous deux.</li>
+                    </ul>
+                    <p class="info" style="margin-top:0.5rem">Les deux modes sont mutuellement exclusifs : tu ne peux
+                        pas avoir en même temps une demande de groupe et une permutation.</p>
+                </div>
+
                 <div class="actions">
                     <button class="btn btn-primary" onclick="studentConfirm()">C'est moi</button>
                     <button class="btn" onclick="studentCancel()">Annuler</button>
@@ -329,6 +352,7 @@
                         demande</button>
                     <button class="btn btn-danger hidden" id="stu-withdraw-btn"
                         onclick="studentWithdraw()">Retirer</button>
+                    <button class="btn" onclick="studentHome()">Retour</button>
                 </div>
                 <div id="stu-msg"></div>
             </div>
@@ -376,6 +400,27 @@
                     <div id="admin-create-msg"></div>
                 </div>
 
+                <div class="card" style="margin-top:1rem">
+                    <h2 style="font-size:1.1rem;margin-bottom:1rem">Importer les données</h2>
+                    <p class="info" style="margin-bottom:1rem">
+                        Choisir une campagne <strong>draft</strong> puis importer ses 2 fichiers Excel.
+                    </p>
+                    <div class="form-group">
+                        <label>Campagne cible</label>
+                        <select id="import-campaign"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Fichier affectations (Feuil1 : N° / Nom / Prénom / Profil / Groupe)</label>
+                        <input type="file" id="import-assignments" accept=".xlsx,.xls">
+                    </div>
+                    <div class="form-group">
+                        <label>Fichier correspondance (Feuil2 : Profil / Groupes)</label>
+                        <input type="file" id="import-correspondence" accept=".xlsx,.xls">
+                    </div>
+                    <button class="btn btn-primary" onclick="adminImport()">Importer</button>
+                    <div id="import-msg"></div>
+                </div>
+
                 <div class="card hidden" id="admin-detail">
                     <h2 id="admin-detail-title" style="font-size:1.1rem;margin-bottom:1rem"></h2>
                     <div id="admin-detail-body"></div>
@@ -418,6 +463,13 @@
             document.getElementById('view-admin').classList.toggle('hidden', view !== 'admin');
         }
 
+        function clearStudentMessages() {
+            showMsg(document.getElementById('stu-msg'), '');
+            showMsg(document.getElementById('stu-confirm-msg'), '');
+            showMsg(document.getElementById('stu-login-msg'), '');
+            showMsg(document.getElementById('swap-status'), '');
+        }
+
         // ─── ÉTUDIANT ────────────────────────────────────────────────────────
         async function loadCampaigns() {
             try {
@@ -435,6 +487,8 @@
         }
 
         async function studentLogin() {
+            clearStudentMessages();
+
             const cid = state.studentCampaign;
             const num = document.getElementById('stu-number').value.trim();
             const code = document.getElementById('stu-code').value.trim();
@@ -449,7 +503,6 @@
                 state.studentNumber = num;
                 state.studentData = data;
 
-                // Afficher la confirmation d'identité
                 document.getElementById('stu-login').classList.add('hidden');
                 document.getElementById('stu-confirm').classList.remove('hidden');
                 document.getElementById('stu-confirm-text').innerHTML =
@@ -461,6 +514,8 @@
         }
 
         function studentConfirm() {
+            clearStudentMessages();
+
             document.getElementById('stu-confirm').classList.add('hidden');
             document.getElementById('stu-main').classList.remove('hidden');
             document.getElementById('stu-header').textContent =
@@ -468,7 +523,6 @@
             document.getElementById('stu-current-group').textContent =
                 `Groupe actuel : ${state.studentData.current_group}`;
 
-            // Construire la liste des groupes éligibles
             const list = document.getElementById('stu-groups');
             list.innerHTML = '';
             (state.studentData.eligible_groups || []).forEach((g, idx) => {
@@ -480,6 +534,10 @@
     </li>`;
             });
 
+            document.getElementById('stu-submit-btn').textContent = 'Déposer ma demande';
+            document.getElementById('stu-withdraw-btn').classList.add('hidden');
+            currentMode = 'groups';
+
             loadExistingRequest();
         }
 
@@ -488,6 +546,20 @@
             document.getElementById('stu-login').classList.remove('hidden');
             state.studentData = null;
             state.studentNumber = null;
+        }
+
+        function studentHome() {
+            clearStudentMessages();
+
+            document.getElementById('stu-main').classList.add('hidden');
+            document.getElementById('stu-confirm').classList.add('hidden');
+            document.getElementById('stu-login').classList.remove('hidden');
+
+            document.getElementById('stu-number').value = '';
+            document.getElementById('stu-code').value = '';
+            state.studentData = null;
+            state.studentNumber = null;
+            currentMode = 'groups';
         }
 
         async function loadExistingRequest() {
@@ -546,7 +618,7 @@
 
             const submitBtn = document.getElementById('stu-submit-btn');
             if (mode === 'groups') {
-                submitBtn.textContent = 'Déposer ma demande';
+                submitBtn.textContent = 'Déposer ma demande de groupe';
             } else {
                 submitBtn.textContent = 'Proposer la permutation';
             }
@@ -667,6 +739,51 @@
             adminLoadCampaigns();
         }
 
+        // Charger la liste des campagnes draft pour le select d'import
+        function loadDraftCampaigns() {
+            api('GET', '/campaigns').then(data => {
+                const sel = document.getElementById('import-campaign');
+                sel.innerHTML = '<option value="">— Choisir —</option>';
+                (data.campaigns || []).forEach(c => {
+                    if (c.status === 'draft') {
+                        sel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+                    }
+                });
+            }).catch(() => { });
+        }
+
+        async function adminImport() {
+            const campaignId = document.getElementById('import-campaign').value;
+            const fileA = document.getElementById('import-assignments').files[0];
+            const fileC = document.getElementById('import-correspondence').files[0];
+
+            if (!campaignId) return showMsg(document.getElementById('import-msg'), 'Choisis une campagne.');
+            if (!fileA || !fileC) return showMsg(document.getElementById('import-msg'), 'Choisis les deux fichiers.');
+
+            const formData = new FormData();
+            formData.append('assignments', fileA);
+            formData.append('correspondence', fileC);
+
+            try {
+                const res = await fetch(`/campaigns/${campaignId}/import`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ error: res.statusText }));
+                    throw new Error(err.error || 'Erreur serveur');
+                }
+
+                const data = await res.json();
+                showMsg(document.getElementById('import-msg'), data.message, 'success');
+                adminLoadCampaigns();
+                loadDraftCampaigns();
+            } catch (e) {
+                showMsg(document.getElementById('import-msg'), e.message);
+            }
+        }
+
         async function adminLoadCampaigns() {
             try {
                 const data = await api('GET', '/campaigns');
@@ -676,7 +793,8 @@
                 (data.campaigns || []).forEach(c => {
                     let actions = '';
                     if (c.status === 'draft') actions = `<button class="btn btn-success" onclick="adminAct(${c.id},'open')">Ouvrir</button>`;
-                    if (c.status === 'open') actions = `<button class="btn" onclick="adminAct(${c.id},'close')">Fermer</button>`;
+                    if (c.status === 'open') actions = `<button class="btn" onclick="adminAct(${c.id},'close')">Fermer</button>
+                    <button class="btn" onclick="adminDetail(${c.id})">Détail</button>`;
                     if (c.status === 'closed') actions = `<button class="btn btn-primary" onclick="adminAct(${c.id},'match')">Match</button>
                                            <button class="btn" onclick="adminDetail(${c.id})">Détail</button>`;
                     if (c.status === 'matched') actions = `<button class="btn" onclick="adminDetail(${c.id})">Résultat</button>`;
@@ -725,6 +843,7 @@
                 showMsg(document.getElementById('admin-create-msg'), 'Campagne créée.', 'success');
                 document.getElementById('new-camp-name').value = '';
                 adminLoadCampaigns();
+                loadDraftCampaigns();
             } catch (e) {
                 showMsg(document.getElementById('admin-create-msg'), e.message);
             }
@@ -732,14 +851,27 @@
 
         async function adminDetail(campaignId) {
             try {
-                const [camp, reqs, matches] = await Promise.all([
+                const [camp, reqs, matches, swaps] = await Promise.all([
                     api('GET', `/campaigns/${campaignId}`),
                     api('GET', `/campaigns/${campaignId}/requests/joined`),
                     api('GET', `/campaigns/${campaignId}/matches`).catch(() => ({ matches: [] })),
+                    api('GET', `/campaigns/${campaignId}/confirmed-swaps`).catch(() => ({ swaps: [] })),
                 ]);
 
-                let html = `<h3 style="margin-bottom:0.5rem">Groupes</h3><table>
-      <thead><tr><th>Nom</th><th>Capacité</th></tr></thead><tbody>`;
+                const swapCount = Math.round((swaps.swaps || []).length / 2);
+                const changeCount = (reqs.requests || []).length;
+
+                let html = `<div class="card" style="background:#f8fafc;margin-bottom:1rem">
+  <strong>Résumé</strong>
+  <ul class="group-list" style="margin-top:0.5rem">
+    <li>📝 ${changeCount} demande(s) de changement de groupe</li>
+    <li>🔄 ${swapCount} permutation(s) 1-1 confirmée(s)</li>
+    <li>✅ ${(matches.matches || []).length} étudiant(s) déplacé(s) par le matching</li>
+  </ul>
+</div>`;
+
+                html += `<h3 style="margin-bottom:0.5rem">Groupes</h3><table>
+  <thead><tr><th>Nom</th><th>Capacité</th></tr></thead><tbody>`;
                 (camp.groups || []).forEach(g => {
                     html += `<tr><td>${g.name}</td><td>${g.capacity}</td></tr>`;
                 });
@@ -779,13 +911,17 @@
                 document.getElementById('admin-detail-title').textContent = camp.name;
                 document.getElementById('admin-detail-body').innerHTML = html;
                 document.getElementById('admin-detail').classList.remove('hidden');
+                document.getElementById('admin-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
             } catch (e) {
                 showMsg(document.getElementById('admin-create-msg'), e.message);
             }
         }
 
         // ─── Init ────────────────────────────────────────────────────────────
-        document.addEventListener('DOMContentLoaded', loadCampaigns);
+        document.addEventListener('DOMContentLoaded', () => {
+            loadCampaigns();
+            loadDraftCampaigns();
+        });
     </script>
 </body>
 
