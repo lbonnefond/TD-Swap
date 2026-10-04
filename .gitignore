@@ -3,7 +3,9 @@
 /storage/*.sqlite
 /storage/
 /data/~$*.xlsx
+/data/campaignes/
 .env
 .DS_Store
 
 .phpunit.cache/
+.phpunit.result.cache

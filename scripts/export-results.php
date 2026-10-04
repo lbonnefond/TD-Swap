@@ -13,9 +13,29 @@ if ($argc < 2) {
     exit(1);
 }
 
-$campaignId = (int) $argv[1];
+// Parser --db
+$dbPath = null;
+$campaignId = null;
+for ($i = 1; $i < count($argv); $i++) {
+    if ($argv[$i] === '--db' && isset($argv[$i + 1])) {
+        $dbPath = $argv[++$i];
+    } elseif ($argv[$i] !== '') {
+        $campaignId = $argv[$i];
+    }
+}
+if ($campaignId === null) {
+    fwrite(STDERR, "Usage : php run-matching.php <campaignId> [--db <chemin>]\n");
+    exit(1);
+}
+$campaignId = (int) $campaignId;
 
-$pdo = DatabaseFactory::create(__DIR__ . '/../storage/td-swap.sqlite');
+// Ouvre la BDD : principale par défaut, ou la BDD de travail si --db
+if ($dbPath !== null) {
+    $pdo = DatabaseFactory::createForCampaign($dbPath);
+    echo "BDD de travail : {$dbPath}\n";
+} else {
+    $pdo = DatabaseFactory::create(__DIR__ . '/../storage/td-swap.sqlite');
+}
 
 // ─── 1. Récupérer tous les étudiants de la campagne ───────────────
 $stmt = $pdo->prepare(
@@ -107,13 +127,13 @@ foreach ($students as $student) {
 
     $rows[] = [
         'student_number' => $number,
-        'surname'        => $student['surname'],
-        'first_name'     => $student['first_name'],
-        'profile'        => $student['profile'],
-        'current_group'  => $student['current_group'],
-        'new_group'      => $newGroup,
-        'source'         => $source,
-        'partner'        => $partner,
+        'surname' => $student['surname'],
+        'first_name' => $student['first_name'],
+        'profile' => $student['profile'],
+        'current_group' => $student['current_group'],
+        'new_group' => $newGroup,
+        'source' => $source,
+        'partner' => $partner,
     ];
 }
 
@@ -131,9 +151,16 @@ $sheet->getStyle('A1:G1')->getFont()->setBold(true);
 $rowIdx = 2;
 foreach ($rows as $row) {
     $sheet->fromArray(
-        [$row['student_number'], $row['surname'], $row['first_name'],
-         $row['profile'], $row['current_group'], $row['new_group'],
-         $row['source'], $row['partner']],
+        [
+            $row['student_number'],
+            $row['surname'],
+            $row['first_name'],
+            $row['profile'],
+            $row['current_group'],
+            $row['new_group'],
+            $row['source'],
+            $row['partner']
+        ],
         null,
         'A' . $rowIdx
     );

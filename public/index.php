@@ -24,6 +24,8 @@ $campaignService = new CampaignService(
     $campaignRepository
 );
 
+$snapshotService = new \LBonnefond\TdSwap\Service\CampaignSnapshotService($pdo, $campaignRepository);
+
 $requestRepository = new CampaignRequestRepository($pdo);
 
 $requestService = new RequestService(
@@ -46,6 +48,10 @@ header('Content-Type: application/json; charset=utf-8');
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+
+if ($path !== '/' && is_file(__DIR__ . $path)) {
+    return false;
+}
 
 // Redirect racine vers l'interface
 if ($method === 'GET' && $path === '/') {
@@ -76,7 +82,69 @@ function requireCampusAccess(\PDO $pdo, int $campaignId, array $input): void
     }
 }
 
+/* ─── Authentification admin ──────────────────────────────────── */
+$envFile = __DIR__ . '/../.env';
+if (is_file($envFile)) {
+    foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        $line = trim($line);
+        if ($line === '' || $line[0] === '#' || strpos($line, '=') === false) {
+            continue;
+        }
+        [$key, $val] = explode('=', $line, 2);
+        if (getenv(trim($key)) === false) {
+            putenv(trim($key) . '=' . trim($val));
+        }
+    }
+}
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_name('tdswap_admin');
+    session_set_cookie_params([
+        'httponly' => true,
+        'samesite' => 'Lax',
+        'secure' => !empty($_SERVER['HTTPS']),
+    ]);
+    session_start();
+}
+
+function tdswap_require_admin(): void
+{
+    $active = !empty($_SESSION['admin'])
+        && (time() - (int) ($_SESSION['admin_ts'] ?? 0)) < 8 * 3600;
+
+    if (!$active) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Accès admin requis.']);
+        exit;
+    }
+}
+
+if ($method === 'POST' && $path === '/admin/login') {
+    $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
+    $expected = getenv('ADMIN_CODE') ?: '';
+    $code = (string) ($input['code'] ?? '');
+    if ($expected !== '' && $code !== '' && hash_equals($expected, $code)) {
+        session_regenerate_id(true);
+        $_SESSION['admin'] = true;
+        $_SESSION['admin_ts'] = time();
+        echo json_encode(['ok' => true]);
+    } else {
+        http_response_code(401);
+        echo json_encode(['error' => 'Code admin incorrect.']);
+    }
+    exit;
+}
+
+if ($method === 'POST' && $path === '/admin/logout') {
+    $_SESSION = [];
+    session_destroy();
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
 try {
+
+
     if ($method === 'GET' && $path === '/campaigns') {
         echo json_encode(
             [
@@ -88,6 +156,7 @@ try {
     }
 
     if ($method === 'POST' && $path === '/campaigns') {
+        tdswap_require_admin();
         $input = json_decode(
             file_get_contents('php://input'),
             true,
@@ -124,6 +193,7 @@ try {
         $method === 'POST'
         && preg_match('#^/campaigns/(\d+)/open$#', $path, $matches)
     ) {
+        tdswap_require_admin();
         $campaignId = (int) $matches[1];
 
         $campaign = $campaignService->openCampaign(
@@ -684,6 +754,7 @@ try {
         $_SERVER['REQUEST_METHOD'] === 'POST'
         && preg_match('#^/campaigns/(\d+)/close$#', $path, $matches)
     ) {
+        tdswap_require_admin();
         $campaign = $campaignService->closeCampaign(
             (int) $matches[1],
             new DateTimeImmutable(),
@@ -704,6 +775,7 @@ try {
         $method === 'POST'
         && preg_match('#^/campaigns/(\d+)/import$#', $path, $matches)
     ) {
+        tdswap_require_admin();
         $campaignId = (int) $matches[1];
 
         if (empty($_FILES['assignments']) || empty($_FILES['correspondence'])) {
@@ -740,6 +812,7 @@ try {
         && preg_match('#^/campaigns/(\d+)/match$#', $path, $matches)
     ) {
         $campaignId = (int) $matches[1];
+        tdswap_require_admin();
 
         $solution = $matchingService->run(
             $campaignId,
@@ -901,6 +974,158 @@ try {
             ['swaps' => $stmt->fetchAll()],
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT
         );
+        exit;
+    }
+
+    /* ─── EXPORT snapshot de campagne (admin) ────────────────────── */
+    if ($method === 'GET' && preg_match('#^/campaigns/(\d+)/export$#', $path, $m)) {
+        tdswap_require_admin();
+
+        try {
+            $snap = $snapshotService->exportSnapshot((int) $m[1]);
+        } catch (\DomainException $e) {
+            $httpCode = $e->getMessage() === 'Campagne introuvable.' ? 404 : 409;
+            http_response_code($httpCode);
+            echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+            exit;
+        } catch (\RuntimeException $e) {
+            http_response_code(500);
+            echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+            exit;
+        }
+
+        header('Content-Type: application/x-sqlite3');
+        header('Content-Disposition: attachment; filename="' . $snap['filename'] . '"');
+        header('Content-Length: ' . filesize($snap['file']));
+        readfile($snap['file']);
+        unlink($snap['file']);
+        exit;
+    }
+
+    /* ─── SUPPRESSION de campagne (admin) ────────────────────────── */
+    if ($method === 'DELETE' && preg_match('#^/campaigns/(\d+)$#', $path, $m)) {
+        tdswap_require_admin();
+
+        $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
+        $confirmName = trim((string) ($input['confirm_name'] ?? ''));
+
+        try {
+            $result = $snapshotService->deleteCampaign((int) $m[1], $confirmName);
+        } catch (\DomainException $e) {
+            $msg = $e->getMessage();
+            if ($msg === 'Campagne introuvable.') {
+                $httpCode = 404;
+            } elseif ($msg === 'Nom de campagne non confirmé.') {
+                $httpCode = 400;
+            } else {
+                $httpCode = 409;
+            }
+            http_response_code($httpCode);
+            echo json_encode(['error' => $msg], JSON_THROW_ON_ERROR);
+            exit;
+        }
+
+        echo json_encode(['ok' => true, 'deleted' => $result], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT);
+        exit;
+    }
+
+    /* ─── IMPORT snapshot → BDD de travail (admin, local) ────────── */
+    if ($method === 'POST' && preg_match('#^/campaigns/import-snapshot$#', $path, $m)) {
+        tdswap_require_admin();
+
+        if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Fichier manquant ou erreur d\'upload.'], JSON_THROW_ON_ERROR);
+            exit;
+        }
+
+        $targetCampaignId = isset($_GET['campaign_id']) ? (int) $_GET['campaign_id'] : null;
+        $overwrite = ($_GET['overwrite'] ?? '') === '1';
+
+        try {
+            $result = $snapshotService->importSnapshot(
+                (string) $_FILES['file']['tmp_name'],
+                $targetCampaignId,
+                $overwrite,
+            );
+        } catch (\LBonnefond\TdSwap\Service\ConflictException $e) {
+            http_response_code(409);
+            echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+            exit;
+        } catch (\DomainException $e) {
+            http_response_code(422);
+            echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+            exit;
+        } catch (\RuntimeException $e) {
+            http_response_code(500);
+            echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+            exit;
+        }
+
+        echo json_encode([
+            'ok' => true,
+            'dbFile' => $result['file'],
+            'campagne' => [
+                'nom' => $result['name'],
+                'effectif' => $result['students'],
+                'nDemandes' => $result['requests'],
+                'dateImport' => date(DATE_ATOM),
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT);
+        exit;
+    }
+
+    /* ─── Sélection de la BDD de travail active (admin, local) ───── */
+    if ($method === 'POST' && $path === '/working-db/select') {
+        tdswap_require_admin();
+
+        $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
+        $dbFile = trim((string) ($input['file'] ?? ''));
+
+        try {
+            $snapshotService->workingDbPath($dbFile);
+        } catch (\DomainException $e) {
+            $httpCode = $e->getMessage() === 'Nom de fichier invalide.' ? 400 : 404;
+            http_response_code($httpCode);
+            echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+            exit;
+        }
+
+        $_SESSION['working_db'] = $dbFile;
+        echo json_encode(['ok' => true, 'activeDb' => $dbFile], JSON_THROW_ON_ERROR);
+        exit;
+    }
+
+    /* ─── Liste des BDD de travail (admin, local) ────────────────── */
+    if ($method === 'GET' && $path === '/working-db') {
+        tdswap_require_admin();
+
+        echo json_encode([
+            'workingDbs' => $snapshotService->listWorkingDbs(),
+            'activeDb' => $_SESSION['working_db'] ?? null,
+        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT);
+        exit;
+    }
+
+    /* ─── Suppression d'une BDD de travail (admin, local) ────────── */
+    if ($method === 'POST' && $path === '/working-db/remove') {
+        tdswap_require_admin();
+
+        $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
+        $dbFile = trim((string) ($input['file'] ?? ''));
+
+        try {
+            $snapshotService->removeWorkingDb($dbFile);
+        } catch (\DomainException $e) {
+            http_response_code(400);
+            echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+            exit;
+        }
+
+        if (($_SESSION['working_db'] ?? null) === $dbFile) {
+            unset($_SESSION['working_db']);
+        }
+        echo json_encode(['ok' => true], JSON_THROW_ON_ERROR);
         exit;
     }
 

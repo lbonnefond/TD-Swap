@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/13.0/phpunit.xsd"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
          bootstrap="vendor/autoload.php"
-         cacheDirectory=".phpunit.cache"
          colors="true">
     <testsuites>
-        <testsuite name="TD-Swap">
-            <directory>tests</directory>
+        <testsuite name="unit">
+            <directory>tests/</directory>
+            <exclude>tests/Matching/ScalableMatcherPerformanceTest.php</exclude>
+        </testsuite>
+        <testsuite name="perf">
+            <file>tests/Matching/ScalableMatcherPerformanceTest.php</file>
         </testsuite>
     </testsuites>
 </phpunit>

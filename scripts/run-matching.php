@@ -16,9 +16,29 @@ if ($argc < 2) {
     exit(1);
 }
 
-$campaignId = (int) $argv[1];
+// Parser --db
+$dbPath = null;
+$campaignId = null;
+for ($i = 1; $i < count($argv); $i++) {
+    if ($argv[$i] === '--db' && isset($argv[$i + 1])) {
+        $dbPath = $argv[++$i];
+    } elseif ($argv[$i] !== '') {
+        $campaignId = $argv[$i];
+    }
+}
+if ($campaignId === null) {
+    fwrite(STDERR, "Usage : php run-matching.php <campaignId> [--db <chemin>]\n");
+    exit(1);
+}
+$campaignId = (int) $campaignId;
 
-$pdo = DatabaseFactory::create(__DIR__ . '/../storage/td-swap.sqlite');
+// Ouvre la BDD : principale par défaut, ou la BDD de travail si --db
+if ($dbPath !== null) {
+    $pdo = DatabaseFactory::createForCampaign($dbPath);
+    echo "BDD de travail : {$dbPath}\n";
+} else {
+    $pdo = DatabaseFactory::create(__DIR__ . '/../storage/td-swap.sqlite');
+}
 
 $matchingService = new MatchingService(
     $pdo,

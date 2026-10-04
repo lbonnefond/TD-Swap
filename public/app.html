@@ -368,6 +368,8 @@
                         onkeydown="if(event.key==='Enter')adminLogin()">
                 </div>
                 <button class="btn btn-primary" onclick="adminLogin()">Déverrouiller</button>
+                <button class="btn" id="admin-logout-btn" style="display:none"
+                    onclick="adminLogout()">Déconnexion</button>
                 <div id="admin-msg"></div>
             </div>
 
@@ -421,6 +423,21 @@
                     <div id="import-msg"></div>
                 </div>
 
+                <div class="card" style="margin-top:1.5rem">
+                    <h3>BDD de travail (snapshots importés)</h3>
+                    <div id="working-db-banner"
+                        style="display:none;background:#e0e7ff;padding:0.5rem;border-radius:4px;font-size:0.9rem"></div>
+                    <p style="margin:0.5rem 0;font-size:0.9rem">
+                        Importer un snapshot exporté depuis le serveur pour le traiter en local (matching + export
+                        Excel).
+                    </p>
+                    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem">
+                        <input type="file" accept=".db,.sqlite" onchange="uploadSnapshot(this)">
+                        <button class="btn btn-success" onclick="loadWorkingDbs()">Actualiser</button>
+                    </div>
+                    <div id="workingDbList" style="min-height:2rem"></div>
+                </div>
+
                 <div class="card hidden" id="admin-detail">
                     <h2 id="admin-detail-title" style="font-size:1.1rem;margin-bottom:1rem"></h2>
                     <div id="admin-detail-body"></div>
@@ -430,9 +447,6 @@
     </div>
 
     <script>
-        // ─── Config ──────────────────────────────────────────────────────────
-        const ADMIN_PASSWORD = 'changemoi';
-
         // ─── État ────────────────────────────────────────────────────────────
         const state = {
             studentCampaign: null,
@@ -729,14 +743,34 @@
         }
 
         // ─── ADMIN ───────────────────────────────────────────────────────────
-        function adminLogin() {
+        async function adminLogin() {
             const pass = document.getElementById('admin-pass').value;
-            if (pass !== ADMIN_PASSWORD) {
-                return showMsg(document.getElementById('admin-msg'), 'Mot de passe incorrect.');
+            if (!pass) return showMsg(document.getElementById('admin-msg'), 'Entre le code admin.');
+
+            try {
+                const res = await fetch('/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: pass }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ error: 'Code admin incorrect.' }));
+                    throw new Error(err.error);
+                }
+                document.getElementById('admin-pass').value = '';
+                document.getElementById('admin-login').classList.add('hidden');
+                document.getElementById('admin-panel').classList.remove('hidden');
+                document.getElementById('admin-logout-btn').style.display = '';
+                adminLoadCampaigns();
+                loadWorkingDbs();
+            } catch (e) {
+                showMsg(document.getElementById('admin-msg'), e.message);
             }
-            document.getElementById('admin-login').classList.add('hidden');
-            document.getElementById('admin-panel').classList.remove('hidden');
-            adminLoadCampaigns();
+        }
+
+        async function adminLogout() {
+            await fetch('/admin/logout', { method: 'POST' });
+            location.reload();
         }
 
         // Charger la liste des campagnes draft pour le select d'import
@@ -796,8 +830,12 @@
                     if (c.status === 'open') actions = `<button class="btn" onclick="adminAct(${c.id},'close')">Fermer</button>
                     <button class="btn" onclick="adminDetail(${c.id})">Détail</button>`;
                     if (c.status === 'closed') actions = `<button class="btn btn-primary" onclick="adminAct(${c.id},'match')">Match</button>
-                                           <button class="btn" onclick="adminDetail(${c.id})">Détail</button>`;
-                    if (c.status === 'matched') actions = `<button class="btn" onclick="adminDetail(${c.id})">Résultat</button>`;
+                    <button class="btn" onclick="exportCampaign(${c.id})">Exporter</button>
+                    <button class="btn btn-danger" onclick="deleteCampaign(${c.id},'${c.name.replace(/'/g, "\\\'")}','${c.status}')">Supprimer</button>
+                    <button class="btn" onclick="adminDetail(${c.id})">Détail</button>`;
+                    if (c.status === 'matched') actions = `<button class="btn" onclick="adminDetail(${c.id})">Résultat</button>
+                    <button class="btn" onclick="exportCampaign(${c.id})">Exporter</button>
+                    <button class="btn btn-danger" onclick="deleteCampaign(${c.id},'${c.name.replace(/'/g, "\\\'")}','${c.status}')">Supprimer</button>`;
 
                     tbody.innerHTML += `<tr>
         <td>${c.name}</td>
@@ -915,6 +953,102 @@
             } catch (e) {
                 showMsg(document.getElementById('admin-create-msg'), e.message);
             }
+        }
+
+        // Exporter un snapshot
+        function exportCampaign(id) {
+            window.location = `/campaigns/${id}/export`;
+        }
+
+        // Supprimer une campagne (confirmation par ressaisie du nom)
+        async function deleteCampaign(id, name, status) {
+            // Garde-fou renforcé si la campagne n'a pas encore été matchée
+            if (status === 'closed') {
+                const warn = `⚠️ ATTENTION : la campagne « ${name} » est fermée mais N'A PAS ENCORE ÉTÉ MATCHÉE.\n\n` +
+                    `Les demandes des étudiants seront définitivement perdues.\n` +
+                    `Exporte d'abord le snapshot (bouton « Exporter ») si tu comptes la traiter en local.\n\n` +
+                    `Continuer la suppression ?`;
+                if (!confirm(warn)) return;
+            }
+
+            const confirmName = prompt('Ressaisir le nom exact pour confirmer : ' + name);
+            if (confirmName === null) return;
+
+            const res = await fetch(`/campaigns/${id}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirm_name: confirmName }),
+            });
+            const data = await res.json();
+            if (!res.ok) alert(data.error || 'Erreur');
+            else {
+                alert(`Campagne supprimée (${data.deleted?.students ?? 0} étudiants, ${data.deleted?.requests ?? 0} demandes).`);
+                adminLoadCampaigns();
+                loadWorkingDbs();
+            }
+        }
+
+        // Importer un snapshot
+        async function uploadSnapshot(fileInput) {
+            const file = fileInput.files[0];
+            if (!file) return;
+            const form = new FormData();
+            form.append('file', file);
+            const res = await fetch('/campaigns/import-snapshot', { method: 'POST', body: form });
+            const data = await res.json();
+            if (!res.ok) alert(data.error || 'Erreur');
+            else {
+                alert(`Snapshot importé : ${data.dbFile} (${data.campagne?.effectif} étudiants).`);
+                loadWorkingDbs();
+            }
+            fileInput.value = '';
+        }
+
+        // Liste des BDD de travail
+        async function loadWorkingDbs() {
+            const res = await fetch('/working-db');
+            if (!res.ok) return;
+            const data = await res.json();
+
+            // Bandeau BDD active
+            const banner = document.getElementById('working-db-banner');
+            if (data.activeDb) {
+                banner.style.display = 'block';
+                banner.textContent = 'BDD de travail : ' + data.activeDb + ' — les opérations s\'appliquent à cette BDD, pas à la principale.';
+            } else {
+                banner.style.display = 'none';
+            }
+
+            const list = document.getElementById('workingDbList');
+            list.innerHTML = (data.workingDbs || []).map(db => `
+        <div style="display:flex;gap:8px;align-items:center;padding:4px 0;flex-wrap:wrap">
+            <code>${db.file}</code>
+            <small>(${(db.size / 1024 / 1024).toFixed(1)} Mo, ${new Date(db.modified).toLocaleDateString()})</small>
+            ${db.file === data.activeDb ? '<span style="color:green">✓ active</span>' : ''}
+            <button class="btn btn-sm" onclick="selectWorkingDb('${db.file}')">Utiliser</button>
+            <button class="btn btn-sm btn-danger" onclick="removeWorkingDb('${db.file}')">Supprimer</button>
+        </div>
+    `).join('') || '<em>Aucune BDD de travail.</em>';
+        }
+
+        async function selectWorkingDb(file) {
+            await fetch('/working-db/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file }),
+            });
+            loadWorkingDbs();
+            adminLoadCampaigns();
+        }
+
+        async function removeWorkingDb(file) {
+            if (!confirm('Supprimer cette BDD de travail ?')) return;
+            await fetch('/working-db/remove', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file }),
+            });
+            loadWorkingDbs();
         }
 
         // ─── Init ────────────────────────────────────────────────────────────
