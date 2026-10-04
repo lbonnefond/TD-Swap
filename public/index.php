@@ -29,6 +29,12 @@ $snapshotService = new \LBonnefond\TdSwap\Service\CampaignSnapshotService($pdo, 
 /* ─── BDD active : si une BDD de travail est sélectionnée, tout opère dessus ─── */
 $mainPdo = $pdo; // référence conservée (non utilisée directement, les routes de gestion BDD de travail font du fichier, pas du SQL)
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_name('tdswap_admin');
+    session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax', 'secure' => !empty($_SERVER['HTTPS'])]);
+    session_start();
+}
+
 $activeWorkingDb = $_SESSION['working_db'] ?? null;
 
 if ($activeWorkingDb !== null) {
@@ -779,7 +785,7 @@ try {
         tdswap_require_admin();
         $input = json_decode(file_get_contents('php://input'), true, 512);
         $force = !empty($input['force']);
-        
+
         $campaign = $campaignService->closeCampaign(
             (int) $matches[1],
             new DateTimeImmutable(),
