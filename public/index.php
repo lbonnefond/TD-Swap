@@ -26,6 +26,32 @@ $campaignService = new CampaignService(
 
 $snapshotService = new \LBonnefond\TdSwap\Service\CampaignSnapshotService($pdo, $campaignRepository);
 
+/* ─── BDD active : si une BDD de travail est sélectionnée, tout opère dessus ─── */
+$mainPdo = $pdo; // référence conservée (non utilisée directement, les routes de gestion BDD de travail font du fichier, pas du SQL)
+
+$activeWorkingDb = $_SESSION['working_db'] ?? null;
+
+if ($activeWorkingDb !== null) {
+    try {
+        $workingDbPath = $snapshotService->workingDbPath($activeWorkingDb);
+    } catch (\DomainException $e) {
+        // BDD de travail supprimée depuis la sélection : on repasse sur la principale
+        unset($_SESSION['working_db']);
+        $activeWorkingDb = null;
+    }
+
+    if ($activeWorkingDb !== null) {
+        $pdo = DatabaseFactory::createForCampaign($workingDbPath);
+        $campaignRepository = new CampaignRepository($pdo);
+        $campaignService = new CampaignService($pdo, $campaignRepository);
+        $snapshotService = new \LBonnefond\TdSwap\Service\CampaignSnapshotService($pdo, $campaignRepository);
+        $requestRepository = new CampaignRequestRepository($pdo);
+        $requestService = new RequestService($pdo, $campaignRepository, $requestRepository);
+        $matchRepository = new MatchRepository($pdo);
+        $matchingService = new MatchingService($pdo, $campaignRepository, $requestRepository, $matchRepository, new ScalableMatcher());
+    }
+}
+
 $requestRepository = new CampaignRequestRepository($pdo);
 
 $requestService = new RequestService(
@@ -49,13 +75,9 @@ header('Content-Type: application/json; charset=utf-8');
 $method = $_SERVER['REQUEST_METHOD'];
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
-if ($path !== '/' && is_file(__DIR__ . $path)) {
-    return false;
-}
-
 // Redirect racine vers l'interface
 if ($method === 'GET' && $path === '/') {
-    header('Location: /app.html');
+    header('Location: /app.html?v=' . sha1_file(__DIR__ . '/app.html'));
     http_response_code(302);
     exit;
 }
