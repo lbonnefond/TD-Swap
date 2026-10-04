@@ -854,7 +854,8 @@
                     if (!confirm('Lancer le matching ? Cette opération peut prendre quelques minutes.')) return;
                     showMsg(document.getElementById('admin-create-msg'), 'Matching en cours…', 'success');
                 }
-                const res = await api('POST', `/campaigns/${id}/${action}`);
+                const body = action === 'close' ? { force: true } : null;
+                const res = await api('POST', `/campaigns/${id}/${action}`, body);
                 if (action === 'match') {
                     showMsg(document.getElementById('admin-create-msg'),
                         `Matching terminé : ${res.count} étudiants déplacés.`,

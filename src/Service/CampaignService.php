@@ -357,6 +357,7 @@ final class CampaignService
     public function closeCampaign(
         int $campaignId,
         \DateTimeImmutable $now,
+        bool $force = false,
     ): Campaign {
         $campaign = $this->requireCampaign($campaignId);
 
@@ -365,6 +366,12 @@ final class CampaignService
                 'Seule une campagne open peut être fermée.'
             );
         }
+
+        if (!$force && $now < $campaign->closesAt) {
+            throw new \DomainException(
+                'La campagne ne peut pas être fermée avant sa date de fin.'
+            );
+        }        
 
         if ($now < $campaign->closesAt) {
             throw new \DomainException(
