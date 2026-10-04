@@ -373,12 +373,6 @@ final class CampaignService
             );
         }        
 
-        if ($now < $campaign->closesAt) {
-            throw new \DomainException(
-                'La campagne ne peut pas être fermée avant sa date de fin.'
-            );
-        }
-
         return $this->campaignRepository->updateStatus(
             $campaignId,
             'closed',

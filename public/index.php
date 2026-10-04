@@ -779,7 +779,7 @@ try {
         tdswap_require_admin();
         $input = json_decode(file_get_contents('php://input'), true, 512);
         $force = !empty($input['force']);
-
+        
         $campaign = $campaignService->closeCampaign(
             (int) $matches[1],
             new DateTimeImmutable(),
