@@ -424,6 +424,51 @@
                 </div>
 
                 <div class="card" style="margin-top:1.5rem">
+                    <h3>Remplissage des groupes (pré-campagne)</h3>
+                    <p class="info">
+                        Fournir le fichier étudiants (colonne Groupe vide) et la correspondance (sous-groupes par
+                        profil).
+                        L'effectif max est saisi par famille (ex. « C41 » pour C41-a + C41-b + C41-c).
+                    </p>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0">
+                        <div>
+                            <label>Fichier étudiants (Feuil1, colonne Groupe vide)</label>
+                            <input type="file" id="fill-assignments" accept=".xlsx">
+                        </div>
+                        <div>
+                            <label>Fichier correspondance (Feuil2 : Profil / Groupes)</label>
+                            <input type="file" id="fill-correspondence" accept=".xlsx">
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary" onclick="fillLoadFamilies()">Analyser les familles</button>
+
+                    <div id="fill-families" style="display:none;margin-top:1rem">
+                        <h4>Effectifs max par famille</h4>
+                        <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem">
+                            <label for="fill-common-cap">Valeur commune</label>
+                            <input type="number" id="fill-common-cap" min="0" style="width:5rem">
+                            <button class="btn" onclick="fillApplyCommon()">Appliquer à toutes les familles</button>
+                            <span class="info">Après, ajuste individuellement si besoin.</span>
+                        </div>
+                        <table id="fill-families-table">
+                            <thead>
+                                <tr>
+                                    <th>Famille</th>
+                                    <th>Sous-groupes</th>
+                                    <th>Effectif max</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                        <button class="btn btn-success" onclick="fillGenerate()">Générer l'affectation</button>
+                    </div>
+
+                    <div id="fill-result" style="display:none;margin-top:1rem"></div>
+                </div>
+
+                <div class="card" style="margin-top:1.5rem">
                     <h3>BDD de travail (snapshots importés)</h3>
                     <div id="working-db-banner"
                         style="display:none;background:#e0e7ff;padding:0.5rem;border-radius:4px;font-size:0.9rem"></div>
@@ -453,6 +498,144 @@
             studentNumber: null,
             studentData: null,
         };
+
+        // ─── Remplissage des groupes ──────────────────────────────────────
+        let fillData = null; // stocke le résultat du remplissage
+
+        async function fillLoadFamilies() {
+            const fileA = document.getElementById('fill-assignments').files[0];
+            const fileC = document.getElementById('fill-correspondence').files[0];
+            if (!fileA || !fileC) {
+                showMsg(document.getElementById('fill-result'), 'Choisis les deux fichiers.');
+                return;
+            }
+
+            const form = new FormData();
+            form.append('assignments', fileA);
+            form.append('correspondence', fileC);
+
+            showMsg(document.getElementById('fill-result'), 'Analyse en cours…', 'success');
+
+            const res = await fetch('/fill/families', { method: 'POST', body: form });
+            const data = await res.json().catch(() => ({ error: 'Erreur serveur' }));
+
+            if (!res.ok) {
+                showMsg(document.getElementById('fill-result'), data.error || 'Erreur.');
+                return;
+            }
+
+            // Afficher les familles avec les champs effectif max
+            const tbody = document.querySelector('#fill-families-table tbody');
+            tbody.innerHTML = '';
+            (data.families || []).forEach(f => {
+                tbody.innerHTML += `<tr>
+            <td><strong>${f.name}</strong></td>
+            <td>${f.subGroups.join(', ')}</td>
+            <td><input type="number" min="0" id="cap-${f.name}" style="width:5rem"></td>
+        </tr>`;
+            });
+            document.getElementById('fill-families').style.display = '';
+            showMsg(document.getElementById('fill-result'), `${data.studentCount} étudiants, ${(data.families || []).length} familles détectées.`, 'success');
+        }
+
+        async function fillGenerate() {
+            // Récupérer les capacités
+            const tbody = document.querySelector('#fill-families-table tbody');
+            const capacities = {};
+            tbody.querySelectorAll('tr').forEach(tr => {
+                const name = tr.querySelector('strong').textContent;
+                const cap = parseInt(tr.querySelector('input').value) || 0;
+                capacities[name] = cap;
+            });
+
+            // Re-récupérer les fichiers (pas de stock)
+            const fileA = document.getElementById('fill-assignments').files[0];
+            const fileC = document.getElementById('fill-correspondence').files[0];
+            const form = new FormData();
+            form.append('assignments', fileA);
+            form.append('correspondence', fileC);
+            form.append('capacities', JSON.stringify(capacities));
+
+            const res = await fetch('/fill/generate', { method: 'POST', body: form });
+            const data = await res.json().catch(() => ({ error: 'Erreur serveur' }));
+
+            if (!res.ok) {
+                showMsg(document.getElementById('fill-result'), data.error || 'Erreur.');
+                return;
+            }
+
+            fillData = data;
+
+            let html = `<div class="message success" style="margin-bottom:1rem">
+        <strong>${data.placed}/${data.total} étudiants placés.</strong>`;
+            if (data.unplaced.length > 0) {
+                html += `<br><em>${data.unplaced.length} non placé(s) : ${data.unplaced.join(', ')} </em>`;
+            }
+            html += `</div>`;
+
+            // Tableau matrice Profil × Famille
+            html += `<h4>Effectifs par profil et famille de groupe</h4>`;
+            html += `<div style="overflow-x:auto"><table style="font-size:0.85rem;border-collapse:collapse">`;
+            html += `<thead><tr><th></th>`;
+            (data.allFamilyNames || []).forEach(f => {
+                html += `<th style="padding:3px 6px;border:1px solid #ccc;text-align:center">${f}</th>`;
+            });
+            html += `<th style="padding:3px 6px;border:1px solid #ccc;text-align:center"><strong>Total</strong></th></tr></thead><tbody>`;
+
+            const m = data.matrixByFamily || {};
+            Object.keys(m).sort().forEach(profile => {
+                let rowTotal = 0;
+                html += `<tr><td style="padding:3px 6px;border:1px solid #ccc"><strong>${profile}</strong></td>`;
+                (data.allFamilyNames || []).forEach(fam => {
+                    const count = m[profile][fam] || 0;
+                    rowTotal += count;
+                    html += `<td style="padding:3px 6px;border:1px solid #ccc;text-align:center${count > 0 ? ';background:#e0e7ff' : ''}">${count || ''}</td>`;
+                });
+                html += `<td style="padding:3px 6px;border:1px solid #ccc;text-align:center"><strong>${rowTotal}</strong></td></tr>`;
+            });
+
+            // Ligne des totaux par famille
+            html += `<tr><td style="padding:3px 6px;border:1px solid #ccc"><strong>Total</strong></td>`;
+            (data.allFamilyNames || []).forEach(fam => {
+                let colTotal = 0;
+                Object.values(m).forEach(profileGroups => {
+                    colTotal += profileGroups[fam] || 0;
+                });
+                html += `<td style="padding:3px 6px;border:1px solid #ccc;text-align:center;background:#f1f5f9"><strong>${colTotal}</strong></td>`;
+            });
+            html += `<td style="padding:3px 6px;border:1px solid #ccc;text-align:center;background:#f1f5f9"><strong>${data.placed}</strong></td></tr>`;
+            html += `</tbody></table></div>`;
+
+            html += `<div style="margin-top:1rem;display:flex;gap:0.5rem">
+        <button class="btn btn-success" onclick="fillExportExcel()">Exporter l'affectation (Excel)</button>
+        <button class="btn btn-success" onclick="fillExportMatrix()">Exporter les effectifs croisés (Excel)</button>
+    </div>`;
+
+            const fillResult = document.getElementById('fill-result');
+            fillResult.style.display = '';
+            fillResult.innerHTML = html;
+        }
+
+        function fillApplyCommon() {
+            const common = parseInt(document.getElementById('fill-common-cap').value);
+            if (isNaN(common) || common < 0) {
+                showMsg(document.getElementById('fill-result'), 'Entre une valeur commune valide (entier ≥ 0).');
+                return;
+            }
+            document.querySelectorAll('#fill-families-table input[type="number"]').forEach(inp => {
+                inp.value = common;
+            });
+        }
+
+        function fillExportExcel() {
+            if (!fillData) return;
+            window.location = '/fill/export-excel?token=' + encodeURIComponent(fillData.token);
+        }
+
+        function fillExportMatrix() {
+            if (!fillData) return;
+            window.location = '/fill/export-matrix-excel?token=' + encodeURIComponent(fillData.token);
+        }
 
         // ─── Utilitaires ─────────────────────────────────────────────────────
         async function api(method, path, body = null) {

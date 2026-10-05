@@ -14,7 +14,8 @@ final class CampaignService
     public function __construct(
         private readonly PDO $pdo,
         private readonly CampaignRepository $campaignRepository,
-    ) {}
+    ) {
+    }
 
     public function createCampaign(Campaign $campaign): Campaign
     {
@@ -83,7 +84,8 @@ final class CampaignService
 
         $rows = $sheet->toArray(null, true, true, true);
 
-        if (($rows[1]['A'] ?? null) !== 'Profil'
+        if (
+            ($rows[1]['A'] ?? null) !== 'Profil'
             || ($rows[1]['B'] ?? null) !== 'Groupes'
         ) {
             throw new \RuntimeException("En-tête inattendue dans 'Feuil2'.");
@@ -129,28 +131,14 @@ final class CampaignService
 
         foreach ($parts as $part) {
             $part = trim($part);
-
             if ($part === '') {
                 continue;
             }
-
-            if (preg_match('/^(?:A\d+[abc]?|B\d+[ab]?|Bind|Santé\s+\d+)$/u', $part)) {
-                $groups[] = $part;
-                continue;
+            // Permissif : lettre majuscule, puis 0-28 caractères alphanumériques/espaces/tirets
+            if (!preg_match('/^[A-Za-zÀ-ÿ][A-Za-z0-9À-ÿ\s-]{0,29}$/u', $part)) {
+                throw new \RuntimeException("Groupe non reconnu : {$part}");
             }
-
-            if (preg_match_all('/(?:A\d+[abc]?|B\d+[ab]?|Bind|Santé\s+\d+)/u', $part, $matches)) {
-                $reconstructed = trim(preg_replace('/\s+/u', ' ', implode(' ', $matches[0])));
-
-                if ($reconstructed === $part) {
-                    foreach ($matches[0] as $group) {
-                        $groups[] = trim($group);
-                    }
-                    continue;
-                }
-            }
-
-            throw new \RuntimeException("Groupe non reconnu : {$part}");
+            $groups[] = $part;
         }
 
         return array_values(array_unique($groups));
@@ -268,7 +256,8 @@ final class CampaignService
             $profile = trim((string) ($row['D'] ?? ''));
             $group = trim((string) ($row['E'] ?? ''));
 
-            if ($number === '' && $surname === '' && $firstName === ''
+            if (
+                $number === '' && $surname === '' && $firstName === ''
                 && $profile === '' && $group === ''
             ) {
                 continue;
@@ -329,7 +318,7 @@ final class CampaignService
 
         return $count;
     }
-    
+
     public function openCampaign(
         int $campaignId,
         \DateTimeImmutable $now,
@@ -371,7 +360,7 @@ final class CampaignService
             throw new \DomainException(
                 'La campagne ne peut pas être fermée avant sa date de fin.'
             );
-        }        
+        }
 
         return $this->campaignRepository->updateStatus(
             $campaignId,

@@ -144,58 +144,18 @@ final class AssignmentImporter
     private function parseGroupList(string $text): array
     {
         $parts = preg_split('/\s*,\s*/', $text) ?: [];
-
         $groups = [];
 
         foreach ($parts as $part) {
             $part = trim($part);
-
             if ($part === '') {
                 continue;
             }
-
-            /*
-             * Cas normal : un seul groupe.
-             */
-            if (
-                preg_match(
-                    '/^(?:A\d+[abc]?|B\d+[ab]?|Bind|Santé\s+\d+)$/u',
-                    $part
-                )
-            ) {
-                $groups[] = $part;
-                continue;
+            // Permissif : lettre majuscule, puis 0-28 caractères alphanumériques/espaces/tirets
+            if (!preg_match('/^[A-Za-zÀ-ÿ][A-Za-z0-9À-ÿ\s-]{0,29}$/u', $part)) {
+                throw new \RuntimeException("Groupe non reconnu : {$part}");
             }
-
-            /*
-             * Cas "A8a A8b" : deux groupes accolés sans virgule.
-             */
-            if (
-                preg_match_all(
-                    '/(?:A\d+[abc]?|B\d+[ab]?|Bind|Santé\s+\d+)/u',
-                    $part,
-                    $matches
-                )
-            ) {
-                $reconstructed = trim(
-                    preg_replace(
-                        '/\s+/u',
-                        ' ',
-                        implode(' ', $matches[0])
-                    )
-                );
-
-                if ($reconstructed === $part) {
-                    foreach ($matches[0] as $group) {
-                        $groups[] = trim($group);
-                    }
-                    continue;
-                }
-            }
-
-            throw new RuntimeException(
-                "Groupe non reconnu dans la correspondance : {$part}"
-            );
+            $groups[] = $part;
         }
 
         return array_values(array_unique($groups));

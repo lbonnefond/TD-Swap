@@ -26,6 +26,8 @@ $campaignService = new CampaignService(
 
 $snapshotService = new \LBonnefond\TdSwap\Service\CampaignSnapshotService($pdo, $campaignRepository);
 
+$fillerService = new \LBonnefond\TdSwap\Service\GroupFillerService();
+
 /* ─── BDD active : si une BDD de travail est sélectionnée, tout opère dessus ─── */
 $mainPdo = $pdo; // référence conservée (non utilisée directement, les routes de gestion BDD de travail font du fichier, pas du SQL)
 
@@ -1158,6 +1160,106 @@ try {
             unset($_SESSION['working_db']);
         }
         echo json_encode(['ok' => true], JSON_THROW_ON_ERROR);
+        exit;
+    }
+
+    /* ─── Remplissage : détecter les familles ────────────────────── */
+    if ($method === 'POST' && $path === '/fill/families') {
+        tdswap_require_admin();
+        $a = $_FILES['assignments']['tmp_name'] ?? '';
+        $c = $_FILES['correspondence']['tmp_name'] ?? '';
+        if ($a === '' || $c === '') {
+            http_response_code(400);
+            echo json_encode(['error' => 'Les deux fichiers sont requis.'], JSON_THROW_ON_ERROR);
+            exit;
+        }
+        try {
+            $result = $fillerService->detectFamilies($a, $c);
+        } catch (\Throwable $e) {
+            http_response_code(422);
+            echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+            exit;
+        }
+        echo json_encode($result, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT);
+        exit;
+    }
+
+    /* ─── Remplissage : générer l'affectation ────────────────────── */
+    if ($method === 'POST' && $path === '/fill/generate') {
+        tdswap_require_admin();
+        $a = $_FILES['assignments']['tmp_name'] ?? '';
+        $c = $_FILES['correspondence']['tmp_name'] ?? '';
+        if ($a === '' || $c === '') {
+            http_response_code(400);
+            echo json_encode(['error' => 'Les deux fichiers sont requis.'], JSON_THROW_ON_ERROR);
+            exit;
+        }
+        $capacities = json_decode((string) ($_POST['capacities'] ?? '{}'), true);
+        if (!is_array($capacities)) {
+            $capacities = [];
+        }
+        try {
+            $result = $fillerService->fill($a, $c, $capacities);
+        } catch (\Throwable $e) {
+            http_response_code(422);
+            echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+            exit;
+        }
+
+        $token = bin2hex(random_bytes(8));
+        $_SESSION['fill_result'][$token] = [
+            'students' => $result['students'],
+            'assignments' => $result['assignments'],
+            'matrixByFamily' => $result['matrixByFamily'],
+            'allFamilyNames' => $result['allFamilyNames'],
+        ];
+        unset($result['students'], $result['assignments']);
+        $result['token'] = $token;
+
+        echo json_encode($result, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT);
+        exit;
+    }
+
+    /* ─── Remplissage : exporter l'Excel ─────────────────────────── */
+    if ($method === 'GET' && $path === '/fill/export-excel') {
+        tdswap_require_admin();
+        $token = (string) ($_GET['token'] ?? '');
+        $stored = $_SESSION['fill_result'][$token] ?? null;
+        if ($stored === null) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Résultat introuvable ou expiré.'], JSON_THROW_ON_ERROR);
+            exit;
+        }
+
+        $file = $fillerService->buildExcel($stored['students'], $stored['assignments']);
+
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="affectation-remplie.xlsx"');
+        header('Content-Length: ' . filesize($file));
+        readfile($file);
+        unlink($file);
+        exit;
+    }
+
+    /* ─── Remplissage : exporter le tableau croisé (Profil × Famille) ─── */
+    if ($method === 'GET' && $path === '/fill/export-matrix-excel') {
+        tdswap_require_admin();
+        $token = (string) ($_GET['token'] ?? '');
+        $stored = $_SESSION['fill_result'][$token] ?? null;
+        if ($stored === null) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Résultat introuvable ou expiré.'], JSON_THROW_ON_ERROR);
+            exit;
+        }
+
+        $file = $fillerService->buildMatrixExcel($stored['matrixByFamily'], $stored['allFamilyNames']);
+
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="effectifs-croises.xlsx"');
+        header('Content-Length: ' . filesize($file));
+        readfile($file);
+        unlink($file);
+        // Pas d'unset du token : on peut exporter les deux Excels dans l'ordre
         exit;
     }
 
