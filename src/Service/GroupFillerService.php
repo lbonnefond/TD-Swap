@@ -38,6 +38,7 @@ final class GroupFillerService
         foreach ($familyMap as $name => $subGroups) {
             $families[] = ['name' => $name, 'subGroups' => array_values($subGroups)];
         }
+        usort($families, static fn(array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
 
         return ['studentCount' => count($students), 'families' => $families];
     }
@@ -238,7 +239,7 @@ final class GroupFillerService
         return $file;
     }
 
-        /**
+    /**
      * Construit l'Excel du tableau croisé Profil × Famille.
      * @param array<string,array<string,int>> $matrixByFamily profil => famille => effectif
      * @param list<string> $allFamilyNames liste ordonnée de toutes les familles
@@ -329,7 +330,7 @@ final class GroupFillerService
         }
 
         $students = [];
-        foreach (array_slice($rows, 2) as $row) {
+        foreach (array_slice($rows, 1) as $row) {
             $number = trim((string) ($row['A'] ?? ''));
             $surname = trim((string) ($row['B'] ?? ''));
             $firstName = trim((string) ($row['C'] ?? ''));
@@ -367,7 +368,7 @@ final class GroupFillerService
         }
 
         $result = [];
-        foreach (array_slice($rows, 2) as $row) {
+        foreach (array_slice($rows, 1) as $row) {
             $profile = trim((string) ($row['A'] ?? ''));
             $groupsText = trim((string) ($row['B'] ?? ''));
             if ($profile === '' && $groupsText === '') {
