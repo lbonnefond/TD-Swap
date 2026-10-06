@@ -35,20 +35,26 @@ final class GroupFillerService
         }
 
         $families = [];
-        foreach ($familyMap as $name => $subGroups) {
-            $families[] = ['name' => $name, 'subGroups' => array_values($subGroups)];
+        $subGroups = [];
+        foreach ($familyMap as $fam => $groups) {
+            $families[] = ['name' => $fam, 'subGroups' => array_values($groups)];
+            foreach ($groups as $g) {
+                $subGroups[] = ['group' => $g, 'family' => $fam];
+            }
         }
         usort($families, static fn(array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
+        usort($subGroups, static fn(array $a, array $b): int => strnatcasecmp($a['group'], $b['group']));
 
-        return ['studentCount' => count($students), 'families' => $families];
+        return ['studentCount' => count($students), 'families' => $families, 'subGroups' => $subGroups];
     }
 
     /**
-     * Affectation par flux maximal.
-     * @param array<string,int> $capacities famille => effectif max
+     * Affectation proportionnelle par profil.
+     * @param array<string,int> $capacities sous-groupe => effectif max
      * @return array{total:int, placed:int, unplaced:list<string>,
-     *               familiesUsed:array<string,int>,
-     *               students:list<array{number:string, surname:string, first_name:string, profile:string}>,
+     *               familiesUsed:array<string,int>, matrix:array<string,array<string,int>>,
+     *               matrixByFamily:array<string,array<string,int>>, allFamilyNames:list<string>,
+     *               students:list<array{number:string,surname:string,first_name:string,profile:string}>,
      *               assignments:array<string,string>}
      */
     public function fill(string $assignmentsFile, string $correspondenceFile, array $capacities): array
@@ -56,142 +62,79 @@ final class GroupFillerService
         $students = $this->readAssignmentsFile($assignmentsFile);
         $correspondence = $this->readCorrespondenceFile($correspondenceFile);
 
-        $nStudents = count($students);
-        if ($nStudents === 0) {
-            throw new \DomainException('Aucun étudiant dans le fichier.');
-        }
-
-        // Sous-groupes et familles
-        $allGroups = [];
-        foreach ($correspondence as $groups) {
+        // Invariant : chaque sous-groupe doit être rattaché à un seul profil
+        $groupToProfile = [];
+        foreach ($correspondence as $profile => $groups) {
             foreach ($groups as $g) {
-                if (!isset($allGroups[$g])) {
-                    $allGroups[$g] = count($allGroups);
+                if (isset($groupToProfile[$g]) && $groupToProfile[$g] !== $profile) {
+                    throw new \DomainException(
+                        "Le sous-groupe {$g} est rattaché à plusieurs profils ({$groupToProfile[$g]} et {$profile}). "
+                        . "Répartissez-le en sous-groupes distincts."
+                    );
                 }
+                $groupToProfile[$g] = $profile;
             }
         }
-        $nGroups = count($allGroups);
 
+        // Familles (affichage uniquement)
         $familyMap = [];
         foreach ($correspondence as $groups) {
             foreach ($groups as $g) {
-                $familyMap[$this->familyOfGroup($g)][] = $g;
+                $fam = $this->familyOfGroup($g);
+                if (!isset($familyMap[$fam])) {
+                    $familyMap[$fam] = [];
+                }
+                if (!in_array($g, $familyMap[$fam], true)) {
+                    $familyMap[$fam][] = $g;
+                }
             }
         }
         $familyNames = array_keys($familyMap);
-        $nFamilies = count($familyNames);
-        $familyIndex = array_flip($familyNames);
+        $allFamilyNames = $familyNames;
+        sort($allFamilyNames);
 
-        // Index des nœuds
-        $source = 0;
-        $studentBase = 1;
-        $groupBase = $studentBase + $nStudents;
-        $familyBase = $groupBase + $nGroups;
-        $sink = $familyBase + $nFamilies;
-        $n = $sink + 1;
-
-        $this->graph = array_fill(0, $n, []);
-
-        // source -> étudiant (cap 1)
-        for ($i = 0; $i < $nStudents; $i++) {
-            $this->addEdge($source, $studentBase + $i, 1);
-        }
-
-        // étudiant -> sous-groupes éligibles (cap 1)
-        foreach ($students as $i => $s) {
-            $profile = $s['profile'];
-            $eligible = $correspondence[$profile] ?? [];
-            foreach ($eligible as $g) {
-                if (isset($allGroups[$g])) {
-                    $this->addEdge($studentBase + $i, $groupBase + $allGroups[$g], 1);
-                }
-            }
-        }
-
-        // sous-groupe -> famille (cap ∞)
-        $big = 1_000_000;
-        foreach ($allGroups as $g => $idx) {
-            $fam = $this->familyOfGroup($g);
-            $this->addEdge($groupBase + $idx, $familyBase + $familyIndex[$fam], $big);
-        }
-
-        // famille -> évier (cap = effectif max saisi)
-        foreach ($familyNames as $fam) {
-            $cap = (int) ($capacities[$fam] ?? 0);
-            $this->addEdge($familyBase + $familyIndex[$fam], $sink, $cap);
-        }
-
-        $this->maxFlow($source, $sink);
-
-        // Récupérer les affectations
+        // Affectation, profil par profil
         $assignments = [];
         $unplaced = [];
-        foreach ($students as $i => $s) {
-            $node = $studentBase + $i;
-            $placed = false;
-            foreach ($this->graph[$node] as $edge) {
-                [$v, $cap] = $edge;
-                if ($v >= $groupBase && $cap === 0) {
-                    $groupIdx = $v - $groupBase;
-                    $gname = array_flip($allGroups)[$groupIdx];
-                    $assignments[$s['number']] = $gname;
-                    $placed = true;
-                    break;
-                }
+        foreach ($correspondence as $profile => $groups) {
+            $profileStudents = array_values(array_filter(
+                $students,
+                static fn(array $s): bool => $s['profile'] === $profile
+            ));
+            $result = $this->fillProRata($profileStudents, $groups, $capacities);
+            foreach ($result['assignments'] as $num => $g) {
+                $assignments[$num] = $g;
             }
-            if (!$placed) {
-                $unplaced[] = $s['number'];
-            }
-        }
-
-        // Occupation par famille
-        $familiesUsed = array_fill_keys($familyNames, 0);
-        foreach ($assignments as $gname) {
-            $familiesUsed[$this->familyOfGroup($gname)]++;
+            $unplaced = array_merge($unplaced, $result['unplaced']);
         }
 
         // Matrice profil × groupe
         $matrix = [];
-        foreach ($students as $i => $s) {
+        foreach ($students as $s) {
             $g = $assignments[$s['number']] ?? null;
             if ($g !== null) {
-                $profile = $s['profile'];
-                if (!isset($matrix[$profile])) {
-                    $matrix[$profile] = [];
-                }
-                if (!isset($matrix[$profile][$g])) {
-                    $matrix[$profile][$g] = 0;
-                }
-                $matrix[$profile][$g]++;
+                $matrix[$s['profile']][$g] = ($matrix[$s['profile']][$g] ?? 0) + 1;
             }
         }
 
-        // Matrice profil × famille (agrégée pour l'affichage et l'export croisé)
+        // Matrice profil × famille
         $matrixByFamily = [];
         foreach ($students as $s) {
             $g = $assignments[$s['number']] ?? null;
             if ($g !== null) {
                 $fam = $this->familyOfGroup($g);
-                $profile = $s['profile'];
-                if (!isset($matrixByFamily[$profile])) {
-                    $matrixByFamily[$profile] = [];
-                }
-                if (!isset($matrixByFamily[$profile][$fam])) {
-                    $matrixByFamily[$profile][$fam] = 0;
-                }
-                $matrixByFamily[$profile][$fam]++;
+                $matrixByFamily[$s['profile']][$fam] = ($matrixByFamily[$s['profile']][$fam] ?? 0) + 1;
             }
         }
 
-        // Liste ordonnée de toutes les familles
-        $allFamilyNames = [];
-        foreach ($familyNames as $fam) {
-            $allFamilyNames[] = $fam;
+        // Occupation par famille
+        $familiesUsed = array_fill_keys($familyNames, 0);
+        foreach ($assignments as $g) {
+            $familiesUsed[$this->familyOfGroup($g)]++;
         }
-        sort($allFamilyNames);
 
         return [
-            'total' => $nStudents,
+            'total' => count($students),
             'placed' => count($assignments),
             'unplaced' => $unplaced,
             'familiesUsed' => $familiesUsed,
@@ -201,6 +144,74 @@ final class GroupFillerService
             'students' => $students,
             'assignments' => $assignments,
         ];
+    }
+
+    /**
+     * Répartit les étudiants d'un profil entre ses sous-groupes, pro-rata à la capacité.
+     * @param list<array{number:string}> $students
+     * @param list<string> $groups
+     * @param array<string,int> $capacities sous-groupe => capacité
+     * @return array{assignments:array<string,string>, unplaced:list<string>}
+     */
+    private function fillProRata(array $students, array $groups, array $capacities): array
+    {
+        $n = count($students);
+        if ($n === 0 || $groups === []) {
+            return ['assignments' => [], 'unplaced' => array_map(static fn($s) => $s['number'], $students)];
+        }
+
+        $totalCap = 0;
+        foreach ($groups as $g) {
+            $totalCap += (int) ($capacities[$g] ?? 0);
+        }
+        if ($totalCap === 0) {
+            return ['assignments' => [], 'unplaced' => array_map(static fn($s) => $s['number'], $students)];
+        }
+
+        $toPlace = min($n, $totalCap);
+
+        // Part idéale de chaque groupe (proportionnelle à sa capacité)
+        $base = [];
+        $remainders = [];
+        foreach ($groups as $g) {
+            $cap = (int) ($capacities[$g] ?? 0);
+            $ideal = $toPlace * $cap / $totalCap;
+            $base[$g] = (int) floor($ideal);
+            $remainders[$g] = $ideal - $base[$g];
+        }
+
+        // Plus gros restes : distribuer les places restantes
+        $order = array_keys($remainders);
+        usort($order, static function (string $a, string $b) use ($remainders): int {
+            if ($remainders[$a] === $remainders[$b]) {
+                return strcmp($a, $b);
+            }
+            return $remainders[$a] < $remainders[$b] ? 1 : -1;
+        });
+        $toDistribute = $toPlace - array_sum($base);
+        foreach ($order as $g) {
+            if ($toDistribute <= 0) {
+                break;
+            }
+            if ($base[$g] < (int) ($capacities[$g] ?? 0)) {
+                $base[$g]++;
+                $toDistribute--;
+            }
+        }
+
+        // Attribuer les étudiants (dans l'ordre du fichier) aux groupes
+        $assignments = [];
+        $queue = array_map(static fn($s) => $s['number'], $students);
+        foreach ($groups as $g) {
+            for ($i = 0; $i < $base[$g]; $i++) {
+                if ($queue === []) {
+                    break 2;
+                }
+                $assignments[array_shift($queue)] = $g;
+            }
+        }
+
+        return ['assignments' => $assignments, 'unplaced' => $queue];
     }
 
     /**

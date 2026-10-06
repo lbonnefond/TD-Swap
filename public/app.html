@@ -455,8 +455,8 @@
                         <table id="fill-families-table">
                             <thead>
                                 <tr>
+                                    <th>Groupe/Sous-groupe</th>
                                     <th>Famille</th>
-                                    <th>Sous-groupes</th>
                                     <th>Effectif max</th>
                                 </tr>
                             </thead>
@@ -527,15 +527,15 @@
             // Afficher les familles avec les champs effectif max
             const tbody = document.querySelector('#fill-families-table tbody');
             tbody.innerHTML = '';
-            (data.families || []).forEach(f => {
+            (data.subGroups || []).forEach(sg => {
                 tbody.innerHTML += `<tr>
-            <td><strong>${f.name}</strong></td>
-            <td>${f.subGroups.join(', ')}</td>
-            <td><input type="number" min="0" id="cap-${f.name}" style="width:5rem"></td>
+            <td><strong>${sg.group}</strong></td>
+            <td>${sg.family}</td>
+            <td><input type="number" min="0" id="cap-${sg.group}" style="width:5rem"></td>
         </tr>`;
             });
             document.getElementById('fill-families').style.display = '';
-            showMsg(document.getElementById('fill-result'), `${data.studentCount} étudiants, ${(data.families || []).length} familles détectées.`, 'success');
+            showMsg(document.getElementById('fill-result'), `${data.studentCount} étudiants, ${(data.subGroups || []).length} sous-groupes détectés.`, 'success');
         }
 
         async function fillGenerate() {
