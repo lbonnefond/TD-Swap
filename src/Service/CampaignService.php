@@ -134,8 +134,8 @@ final class CampaignService
             if ($part === '') {
                 continue;
             }
-            // Permissif : lettre majuscule, puis 0-28 caractères alphanumériques/espaces/tirets
-            if (!preg_match('/^[A-Za-zÀ-ÿ][A-Za-z0-9À-ÿ\s-]{0,29}$/u', $part)) {
+            // Permissif : lettre majuscule, puis 0-28 caractères alphanumériques/espaces/underscores
+            if (!preg_match('/^[A-Za-zÀ-ÿ][A-Za-z0-9À-ÿ\s_-]{0,29}$/u', $part)) {
                 throw new \RuntimeException("Groupe non reconnu : {$part}");
             }
             $groups[] = $part;

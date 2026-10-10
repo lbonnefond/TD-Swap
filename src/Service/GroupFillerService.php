@@ -411,7 +411,7 @@ final class GroupFillerService
             if ($part === '') {
                 continue;
             }
-            if (!preg_match('/^[A-Za-zÀ-ÿ][A-Za-z0-9À-ÿ\s-]{0,29}$/u', $part)) {
+            if (!preg_match('/^[A-Za-zÀ-ÿ][A-Za-z0-9À-ÿ\s_-]{0,29}$/u', $part)) {
                 throw new \DomainException("Groupe non reconnu : {$part}");
             }
             $groups[] = $part;
@@ -419,10 +419,10 @@ final class GroupFillerService
         return array_values(array_unique($groups));
     }
 
-    /** La famille = ce qui est avant le premier tiret (sinon le nom entier). */
+    /** La famille = ce qui est avant le premier underscore (sinon le nom entier). */
     private function familyOfGroup(string $g): string
     {
-        $pos = strpos($g, '-');
+        $pos = strpos($g, '_');
         return $pos === false ? $g : substr($g, 0, $pos);
     }
 
